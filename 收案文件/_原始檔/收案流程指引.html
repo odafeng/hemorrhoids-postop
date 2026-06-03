@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>收案流程指引 — 痔瘡術後數位監測系統</title>
+<style>
+  @page { size: A4 landscape; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Noto Sans TC", "Helvetica Neue", Arial, sans-serif;
+    width: 297mm; height: 210mm;
+    background: #ffffff;
+    color: #1a1a2e;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* ── Header strip ── */
+  .header {
+    background: linear-gradient(135deg, #0f4c75 0%, #1b6ca8 60%, #3282b8 100%);
+    color: #fff;
+    padding: 12px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 52px;
+  }
+  .header-left { display: flex; align-items: center; gap: 12px; }
+  .header-badge {
+    background: rgba(255,255,255,0.18);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .header h1 { font-size: 15px; font-weight: 700; letter-spacing: 0.04em; }
+  .header-sub { font-size: 9.5px; opacity: 0.8; letter-spacing: 0.06em; font-weight: 400; }
+  .header-right { text-align: right; font-size: 8.5px; opacity: 0.7; line-height: 1.5; letter-spacing: 0.04em; }
+
+  /* ── Main grid ── */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 0;
+    padding: 10px 18px 8px;
+    height: calc(210mm - 52px - 42px);
+  }
+
+  /* ── Step cards ── */
+  .step {
+    padding: 8px 12px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  .step + .step { border-left: 1px dashed #d0d8e0; }
+  .row2 .step { border-top: 1.5px solid #e4e8ed; }
+  .row1, .row2 { display: contents; }
+
+  .step-num {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #0f4c75, #3282b8);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 800;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+  }
+  .step-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 5px;
+  }
+  .step-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #0f4c75;
+    line-height: 1.3;
+  }
+  .step-role {
+    font-size: 7.5px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: #fff;
+    background: #e8650a;
+    border-radius: 3px;
+    padding: 1px 5px;
+    text-transform: uppercase;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  .step-role.patient { background: #2e8b57; }
+
+  /* ── Mock UI ── */
+  .mock {
+    background: #f7f8fb;
+    border: 1px solid #dce1e8;
+    border-radius: 8px;
+    padding: 7px 9px;
+    margin: 4px 0 5px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .mock-bar {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 5px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #e8ecf1;
+  }
+  .mock-dot { width: 5px; height: 5px; border-radius: 50%; background: #d0d5dc; }
+  .mock-bar-title { font-size: 7.5px; color: #8892a0; font-weight: 600; letter-spacing: 0.08em; }
+
+  .mock-field {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 3px;
+  }
+  .mock-label {
+    font-size: 7px;
+    color: #8892a0;
+    min-width: 42px;
+    font-weight: 500;
+  }
+  .mock-input {
+    flex: 1;
+    background: #fff;
+    border: 1px solid #dce1e8;
+    border-radius: 4px;
+    padding: 2px 5px;
+    font-size: 8px;
+    color: #1a1a2e;
+    font-family: "SF Mono", "Menlo", monospace;
+  }
+  .mock-input.accent {
+    border-color: #3282b8;
+    color: #0f4c75;
+    font-weight: 600;
+  }
+  .mock-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: linear-gradient(135deg, #0f4c75, #3282b8);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 7.5px;
+    font-weight: 600;
+    margin-top: 2px;
+  }
+  .mock-btn.green { background: linear-gradient(135deg, #1a8a50, #2eab6f); }
+  .mock-btn.ghost { background: transparent; border: 1px solid #d0d5dc; color: #6b7585; }
+
+  .mock-token {
+    background: #fff8e6;
+    border: 1.5px dashed #e8a020;
+    border-radius: 6px;
+    padding: 4px 8px;
+    text-align: center;
+    margin: 4px 0;
+  }
+  .mock-token-val {
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 0.2em;
+    color: #c87000;
+    font-family: "SF Mono", "Menlo", monospace;
+  }
+  .mock-token-hint { font-size: 6.5px; color: #b08830; margin-top: 1px; }
+
+  .mock-consent-box {
+    background: #fff;
+    border: 1px solid #dce1e8;
+    border-radius: 4px;
+    padding: 3px 5px;
+    font-size: 6.5px;
+    color: #6b7585;
+    line-height: 1.4;
+    max-height: 28px;
+    overflow: hidden;
+    margin-bottom: 3px;
+  }
+
+  .mock-check {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 7px;
+    color: #4a5568;
+    margin-bottom: 1.5px;
+  }
+  .mock-checkbox {
+    width: 8px; height: 8px;
+    border: 1.5px solid #3282b8;
+    border-radius: 2px;
+    background: #e8f0fe;
+    display: grid;
+    place-items: center;
+    font-size: 6px;
+    color: #0f4c75;
+    flex-shrink: 0;
+  }
+
+  .mock-sig-area {
+    border: 1.5px dashed #b0bac5;
+    border-radius: 4px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    font-size: 6.5px;
+    color: #a0a8b4;
+    background: #fafbfc;
+    margin: 2px 0;
+  }
+
+  /* ── Status badge in mock ── */
+  .mock-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 7px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 10px;
+  }
+  .mock-status.ok { background: #e6f7ee; color: #1a8a50; }
+  .mock-status.pending { background: #fff3e0; color: #c87000; }
+
+  .mock-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 6px;
+    font-size: 7px;
+  }
+  .mock-grid-k { color: #8892a0; font-weight: 500; }
+  .mock-grid-v { color: #1a1a2e; font-weight: 600; font-family: "SF Mono", monospace; font-size: 7.5px; }
+
+  /* ── Step desc ── */
+  .step-desc {
+    font-size: 8px;
+    color: #4a5568;
+    line-height: 1.55;
+  }
+  .step-desc b { color: #1a1a2e; font-weight: 600; }
+  .step-desc .tip {
+    display: flex;
+    align-items: flex-start;
+    gap: 3px;
+    background: #f0f6ff;
+    border-radius: 4px;
+    padding: 3px 5px;
+    margin-top: 3px;
+    font-size: 7px;
+    color: #2a5fa0;
+    line-height: 1.4;
+  }
+  .step-desc .warn {
+    display: flex;
+    align-items: flex-start;
+    gap: 3px;
+    background: #fff8e6;
+    border-radius: 4px;
+    padding: 3px 5px;
+    margin-top: 3px;
+    font-size: 7px;
+    color: #8a6500;
+    line-height: 1.4;
+  }
+
+  /* ── Arrow between steps ── */
+  .arrow-overlay {
+    position: absolute;
+    pointer-events: none;
+  }
+
+  /* ── Flow arrow (between step columns) ── */
+  .step::after {
+    content: "▸";
+    position: absolute;
+    right: -6px;
+    top: 17px;
+    font-size: 12px;
+    color: #3282b8;
+    z-index: 2;
+  }
+  .step:nth-child(3n)::after { display: none; }
+  .row2 .step:first-child::before {
+    content: "▸";
+    position: absolute;
+    left: -6px;
+    top: 17px;
+    font-size: 12px;
+    color: #3282b8;
+    z-index: 2;
+    display: none;
+  }
+
+  /* ── Row arrow (wrap from row1 to row2) ── */
+  .row-bridge {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 16px;
+    position: relative;
+  }
+  .row-bridge-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 8px;
+    color: #3282b8;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+  }
+  .row-bridge-line::before,
+  .row-bridge-line::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #3282b8 20%, #3282b8 80%, transparent);
+    min-width: 60px;
+  }
+
+  /* ── Footer ── */
+  .footer {
+    position: absolute;
+    bottom: 0;
+    left: 0; right: 0;
+    height: 42px;
+    background: #f7f8fb;
+    border-top: 1px solid #e4e8ed;
+    padding: 0 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 7.5px;
+    color: #8892a0;
+  }
+  .footer-left { display: flex; align-items: center; gap: 20px; }
+  .footer-item { display: flex; align-items: center; gap: 4px; }
+  .footer-icon {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #e4e8f0;
+    display: grid;
+    place-items: center;
+    font-size: 8px;
+  }
+  .footer b { color: #4a5568; font-weight: 600; }
+  .footer-qr {
+    width: 30px; height: 30px;
+    background: #e8ecf1;
+    border-radius: 4px;
+    display: grid;
+    place-items: center;
+    font-size: 6px;
+    color: #8892a0;
+  }
+
+  /* ── Utilities ── */
+  .mono { font-family: "SF Mono", "Menlo", monospace; }
+  .text-accent { color: #0f4c75; }
+  .divider { width: 100%; height: 1px; background: #e4e8ed; margin: 3px 0; }
+
+  /* flow arrows inside row */
+  .step-flow-arrow {
+    position: absolute;
+    right: -9px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 5;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    border: 1.5px solid #3282b8;
+    display: grid;
+    place-items: center;
+    font-size: 10px;
+    color: #3282b8;
+    font-weight: 700;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══ HEADER ═══ -->
+<div class="header">
+  <div class="header-left">
+    <div class="header-badge">KSVGH CRS</div>
+    <div>
+      <h1>收案流程指引 — 研究人員操作手冊</h1>
+      <div class="header-sub">結合 AI 衛教之痔瘡術後數位症狀監測系統 · IRB Ver 2 · 2026.04.14</div>
+    </div>
+  </div>
+  <div class="header-right">
+    PI：黃士峯 醫師<br>
+    高雄榮總 · 大腸直腸外科
+  </div>
+</div>
+
+<!-- ═══ MAIN 6-STEP GRID ═══ -->
+<div class="main">
+
+  <!-- ─── ROW 1: Steps 1-3 ─── -->
+  <div class="row1">
+
+    <!-- STEP 1 -->
+    <div class="step">
+      <div class="step-head">
+        <div class="step-num">1</div>
+        <div class="step-title">產生邀請碼</div>
+        <div class="step-role">研究人員</div>
+        <div class="step-flow-arrow">›</div>
+      </div>
+      <div class="mock">
+        <div class="mock-bar">
+          <div class="mock-dot"></div>
+          <div class="mock-dot"></div>
+          <div class="mock-bar-title">RESEARCHER · 概覽 · 邀請碼管理</div>
+        </div>
+        <div class="mock-field">
+          <div class="mock-label">主刀醫師</div>
+          <div class="mock-input">黃士峯（HSF）▾</div>
+        </div>
+        <div class="mock-field">
+          <div class="mock-label">病人編號</div>
+          <div class="mock-input accent">HSF-<b>003</b></div>
+        </div>
+        <div class="mock-field">
+          <div class="mock-label">有效天數</div>
+          <div class="mock-input">30 天</div>
+        </div>
+        <div class="mock-btn">＋ 產生邀請碼</div>
+        <div class="mock-token">
+          <div class="mock-token-val">XKJM QR</div>
+          <div class="mock-token-hint">6 碼邀請碼 · 口頭告知或紙本交付病人</div>
+        </div>
+      </div>
+      <div class="step-desc">
+        在<b>概覽頁</b>下方「邀請碼管理」，選擇主刀醫師 → 輸入流水號 → 按「產生邀請碼」。系統自動組合 Study ID（如 <b class="mono">HSF-003</b>）。<br>
+        <div class="tip">💡 邀請碼為 6 碼大寫字母，預設 30 天有效，可口頭告知病人。</div>
+      </div>
+    </div>
+
+    <!-- STEP 2 -->
+    <div class="step">
+      <div class="step-head">
+        <div class="step-num">2</div>
+        <div class="step-title">協助病人註冊</div>
+        <div class="step-role patient">病人操作</div>
+        <div class="step-flow-arrow">›</div>
+      </div>
+      <div class="mock">
+        <div class="mock-bar">
+          <div class="mock-dot"></div>
+          <div class="mock-dot"></div>
+          <div class="mock-bar-title">APP · 註冊頁面</div>
+        </div>
+        <div class="mock-field">
+          <div class="mock-label">邀請碼</div>
+          <div class="mock-input accent">XKJMQR</div>
+        </div>
+        <div class="mock-field">
+          <div class="mock-label">手術日期</div>
+          <div class="mock-input">2026-06-04</div>
+        </div>
+        <div class="mock-field">
+          <div class="mock-label">主刀醫師</div>
+          <div class="mock-input">黃士峯（HSF）▾</div>
+        </div>
+        <div class="mock-field">
+          <div class="mock-label">病人編號</div>
+          <div class="mock-input accent">HSF-<b>003</b></div>
+        </div>
+        <div class="divider"></div>
+        <div class="mock-field">
+          <div class="mock-label">Email</div>
+          <div class="mock-input">patient@mail.com</div>
+        </div>
+        <div class="mock-field">
+          <div class="mock-label">密碼</div>
+          <div class="mock-input">••••••••</div>
+        </div>
+        <div class="mock-btn green">建立帳號 ›</div>
+      </div>
+      <div class="step-desc">
+        協助病人開啟 App → 切換到「<b>註冊</b>」tab → 依序填入邀請碼、手術日期、主刀醫師、病人編號、Email 及密碼。<br>
+        <div class="warn">⚠ 編號須與 Step 1 一致，系統會檢查是否重複。密碼至少 6 字元。</div>
+      </div>
+    </div>
+
+    <!-- STEP 3 -->
+    <div class="step" style="border-right: none;">
+      <div class="step-head">
+        <div class="step-num">3</div>
+        <div class="step-title">病人首次登入 + 簽同意書</div>
+        <div class="step-role patient">病人操作</div>
+      </div>
+      <div class="mock">
+        <div class="mock-bar">
+          <div class="mock-dot"></div>
+          <div class="mock-dot"></div>
+          <div class="mock-bar-title">APP · 受試者同意書 · IRB VER 2</div>
+        </div>
+        <div class="mock-consent-box">
+          高雄榮民總醫院 受試者同意書<br>
+          結合人工智慧衛教之痔瘡術後數位症狀監測系統…<br>
+          本研究屬於最低風險研究…
+        </div>
+        <div style="font-size:6px;color:#8892a0;margin-bottom:2px;">↓ 滑至最底部解鎖 ↓</div>
+        <div class="mock-check"><div class="mock-checkbox">✓</div>我已閱讀並了解研究目的</div>
+        <div class="mock-check"><div class="mock-checkbox">✓</div>我已了解可能的風險與益處</div>
+        <div class="mock-check"><div class="mock-checkbox">✓</div>我了解可隨時退出研究</div>
+        <div class="mock-check"><div class="mock-checkbox">✓</div>我同意資料去識別化使用</div>
+        <div class="mock-sig-area">✍ 在此手寫簽名</div>
+        <div style="display:flex;gap:4px;">
+          <div class="mock-btn ghost" style="flex:1;justify-content:center;">拒絕</div>
+          <div class="mock-btn green" style="flex:1;justify-content:center;">簽署並開始 ›</div>
+        </div>
+      </div>
+      <div class="step-desc">
+        帳號建好後，病人登入 → 自動進入<b>同意書頁面</b>。須滑到底部 → 勾選 4 項確認 → 手寫簽名 → 按「簽署並開始」。簽名圖檔自動上傳。
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Bridge arrow ─── -->
+  <div class="row-bridge">
+    <div class="row-bridge-line">▼ 收案完成，進入追蹤期 ▼</div>
+  </div>
+
+  <!-- ─── ROW 2: Steps 4-6 ─── -->
+  <div class="row2">
+
+    <!-- STEP 4 -->
+    <div class="step">
+      <div class="step-head">
+        <div class="step-num">4</div>
+        <div class="step-title">填寫手術紀錄</div>
+        <div class="step-role">研究人員</div>
+        <div class="step-flow-arrow">›</div>
+      </div>
+      <div class="mock">
+        <div class="mock-bar">
+          <div class="mock-dot"></div>
+          <div class="mock-dot"></div>
+          <div class="mock-bar-title">RESEARCHER · 查詢 · HSF-003 · 手術紀錄</div>
+        </div>
+        <div class="mock-field">
+          <div class="mock-label">術式</div>
+          <div class="mock-input">LigaSure Hemorrhoidectomy ▾</div>
+        </div>
+        <div class="mock-field">
+          <div class="mock-label">Subtype</div>
+          <div class="mock-input">Semi-closed ▾</div>
+        </div>
+        <div class="mock-field">
+          <div class="mock-label">Grade</div>
+          <div class="mock-input">III ▾</div>
+        </div>
+        <div class="mock-field">
+          <div class="mock-label">麻醉</div>
+          <div class="mock-input">SA ▾</div>
+        </div>
+        <div class="mock-field">
+          <div class="mock-label">Clock Pos</div>
+          <div class="mock-input">3, 7, 11 o'clock</div>
+        </div>
+        <div class="mock-btn">儲存手術紀錄 ›</div>
+      </div>
+      <div class="step-desc">
+        至<b>查詢頁</b>搜尋 Study ID → 點「撰寫手術紀錄」→ 填入術式、分級、麻醉方式、痔瘡位置等手術細節。
+        <div class="tip">💡 此步驟可於術後任意時間補填，不影響病人使用 App。</div>
+      </div>
+    </div>
+
+    <!-- STEP 5 -->
+    <div class="step">
+      <div class="step-head">
+        <div class="step-num">5</div>
+        <div class="step-title">確認收案 + 日常監控</div>
+        <div class="step-role">研究人員</div>
+        <div class="step-flow-arrow">›</div>
+      </div>
+      <div class="mock">
+        <div class="mock-bar">
+          <div class="mock-dot"></div>
+          <div class="mock-dot"></div>
+          <div class="mock-bar-title">RESEARCHER · 查詢 · CASE DETAIL</div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+          <span style="font-size:12px;font-weight:800;color:#0f4c75;font-family:'SF Mono',monospace;">HSF-003</span>
+          <div class="mock-status ok">● 穩定</div>
+        </div>
+        <div class="mock-grid">
+          <div class="mock-grid-k">Consent</div>
+          <div class="mock-grid-v" style="color:#1a8a50;">✓ 已簽署</div>
+          <div class="mock-grid-k">Surgery</div>
+          <div class="mock-grid-v">2026-06-04</div>
+          <div class="mock-grid-k">POD</div>
+          <div class="mock-grid-v">0</div>
+          <div class="mock-grid-k">Reports</div>
+          <div class="mock-grid-v">1 筆</div>
+          <div class="mock-grid-k">Latest NRS</div>
+          <div class="mock-grid-v">4/10</div>
+          <div class="mock-grid-k">Alerts</div>
+          <div class="mock-grid-v">0</div>
+        </div>
+        <div class="divider" style="margin:4px 0;"></div>
+        <div style="display:flex;gap:4px;">
+          <div class="mock-btn ghost" style="flex:1;justify-content:center;">📋 檢視簽名</div>
+          <div class="mock-btn ghost" style="flex:1;justify-content:center;">📊 手術紀錄</div>
+        </div>
+      </div>
+      <div class="step-desc">
+        在<b>查詢頁</b>輸入 Study ID，確認 Consent 已簽署、Reports 已開始回報。<b>概覽頁</b>可看全部病人回報率、警示、AI 對話審核。
+        <div class="warn">⚠ 警示（高疼痛/出血/發燒）需 24 小時內回覆（不含假日）。</div>
+      </div>
+    </div>
+
+    <!-- STEP 6 -->
+    <div class="step" style="border-right: none;">
+      <div class="step-head">
+        <div class="step-num">6</div>
+        <div class="step-title">病人每日回報 + AI 衛教</div>
+        <div class="step-role patient">病人操作</div>
+      </div>
+      <div class="mock">
+        <div class="mock-bar">
+          <div class="mock-dot"></div>
+          <div class="mock-dot"></div>
+          <div class="mock-bar-title">APP · 病人端 · Dashboard + 回報 + AI Chat</div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <!-- mini dashboard -->
+          <div style="flex:1;background:#fff;border:1px solid #e4e8ed;border-radius:5px;padding:4px;">
+            <div style="font-size:6px;color:#8892a0;margin-bottom:2px;">POST-OP DAY</div>
+            <div style="font-size:18px;font-weight:800;color:#0f4c75;">3</div>
+            <div style="font-size:6px;color:#2e8b57;font-weight:600;">急性期</div>
+          </div>
+          <!-- mini report -->
+          <div style="flex:1.3;background:#fff;border:1px solid #e4e8ed;border-radius:5px;padding:4px;">
+            <div style="font-size:6px;color:#8892a0;margin-bottom:2px;">TODAY · REPORT</div>
+            <div style="font-size:6.5px;color:#4a5568;line-height:1.5;">
+              疼痛 <b style="color:#c87000;">4</b>/10 · 出血 <b style="color:#2e8b57;">無</b><br>
+              排便 <b>正常</b> · 發燒 <b style="color:#2e8b57;">否</b>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:4px;background:#fff;border:1px solid #e4e8ed;border-radius:5px;padding:4px;">
+          <div style="font-size:6px;color:#8892a0;margin-bottom:2px;">AI 衛教助手</div>
+          <div style="font-size:6.5px;color:#4a5568;line-height:1.4;">
+            <span style="color:#3282b8;">Q:</span> 傷口多久會好？<br>
+            <span style="color:#2e8b57;">A:</span> 一般痔瘡術後傷口約 4-6 週癒合…
+          </div>
+        </div>
+      </div>
+      <div class="step-desc">
+        病人每日打開 App 填寫症狀（約 30 秒）。回報頻率：<b>D0-7</b> 每日、<b>D8-14</b> 隔日、<b>D15-30</b> 每週 1-2 次。可隨時使用 AI 衛教。
+        <div class="tip">💡 POD ≥ 14 天時系統自動提示填寫 Usability Survey（SUS 問卷）。</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══ FOOTER ═══ -->
+<div class="footer">
+  <div class="footer-left">
+    <div class="footer-item">
+      <div class="footer-icon">🏥</div>
+      <span>高雄榮總大腸直腸外科</span>
+    </div>
+    <div class="footer-item">
+      <div class="footer-icon">📱</div>
+      <span>PWA App · 加入主畫面即可使用</span>
+    </div>
+    <div class="footer-item">
+      <div class="footer-icon">🔒</div>
+      <span>RLS 隔離 · SOC 2 雲端 · 去識別化</span>
+    </div>
+    <div class="footer-item">
+      <div class="footer-icon">📞</div>
+      <span>24hr 緊急聯絡：<b>0975-581-005</b></span>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <div style="text-align:right;font-size:7px;line-height:1.5;">
+      IRB：KSVGH · Ver 2 · 2026.04.14<br>
+      收案目標：<b>50</b> 位 · 追蹤 <b>30</b> 天
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

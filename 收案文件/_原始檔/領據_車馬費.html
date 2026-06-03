@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>研究參與補償領據</title>
+<style>
+  @page { size: A4 portrait; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Noto Sans TC", -apple-system, "Helvetica Neue", Arial, sans-serif;
+    width: 210mm;
+    height: 297mm;
+    background: #fff;
+    color: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Two copies stacked ── */
+  .receipt {
+    height: 50%;
+    padding: 10mm 18mm 6mm;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .receipt + .receipt {
+    border-top: 2px dashed #b0b8c4;
+    position: relative;
+  }
+  .receipt + .receipt::before {
+    content: "✂ 裁切線 ─────────────────────────────────────────────────────────────────";
+    position: absolute;
+    top: -9px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    background: #fff;
+    padding: 0 8px;
+    font-size: 8px;
+    color: #b0b8c4;
+    letter-spacing: 0.05em;
+  }
+
+  /* ── Copy badge ── */
+  .copy-badge {
+    position: absolute;
+    top: 8mm;
+    right: 18mm;
+    font-size: 9px;
+    font-weight: 700;
+    color: #fff;
+    background: #0f4c75;
+    border-radius: 3px;
+    padding: 2px 8px;
+    letter-spacing: 0.1em;
+  }
+  .copy-badge.patient { background: #2e8b57; }
+
+  /* ── Header ── */
+  .r-header { text-align: center; margin-bottom: 4px; position: relative; }
+  .r-hosp {
+    font-size: 10px;
+    color: #6b7585;
+    letter-spacing: 0.15em;
+  }
+  .r-title {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    color: #0f4c75;
+    margin: 1px 0;
+  }
+  .r-rule {
+    width: 100%;
+    height: 1.5px;
+    background: linear-gradient(90deg, transparent, #0f4c75 15%, #0f4c75 85%, transparent);
+    margin: 4px 0;
+  }
+
+  /* ── Project info ── */
+  .r-project {
+    background: #f5f7fa;
+    border: 1px solid #e0e5ec;
+    border-radius: 5px;
+    padding: 4px 10px;
+    margin-bottom: 5px;
+    font-size: 8px;
+    color: #4a5568;
+    line-height: 1.65;
+  }
+  .r-project b { color: #1a1a2e; }
+
+  /* ── Body ── */
+  .r-body {
+    font-size: 12px;
+    line-height: 2.2;
+    flex: 1;
+  }
+  .r-body p {
+    text-indent: 2em;
+  }
+
+  .r-field {
+    display: inline-block;
+    min-width: 110px;
+    border-bottom: 1px solid #333;
+    text-align: center;
+    padding: 0 6px;
+    font-weight: 600;
+    color: #0f4c75;
+  }
+  .r-field.wide { min-width: 160px; }
+
+  /* ── Amount highlight ── */
+  .r-amount-row {
+    text-align: center;
+    margin: 2px 0;
+  }
+  .r-amount-box {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    border: 1.5px solid #0f4c75;
+    border-radius: 5px;
+    padding: 4px 14px;
+  }
+  .r-amount-label { font-size: 11px; color: #4a5568; }
+  .r-amount-val {
+    font-size: 18px;
+    font-weight: 800;
+    color: #c22;
+    font-family: "Menlo", "SF Mono", monospace;
+  }
+  .r-amount-words { font-size: 11px; color: #1a1a2e; font-weight: 600; }
+
+  /* ── Signature ── */
+  .r-sigs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 4px;
+  }
+  .r-sig-block { text-align: center; }
+  .r-sig-label {
+    font-size: 9px;
+    color: #6b7585;
+    letter-spacing: 0.06em;
+    margin-bottom: 2px;
+  }
+  .r-sig-line {
+    border-bottom: 1px solid #1a1a2e;
+    height: 28px;
+  }
+  .r-sig-hint { font-size: 7px; color: #b0b8c4; }
+
+  /* ── Footer ── */
+  .r-footer {
+    margin-top: 3px;
+    padding-top: 3px;
+    border-top: 1px solid #e0e5ec;
+    font-size: 7.5px;
+    color: #a0a8b4;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .mono { font-family: "Menlo", "SF Mono", monospace; }
+</style>
+</head>
+<body>
+
+<!-- ═══ 第一聯：研究團隊留存 ═══ -->
+<div class="receipt" style="position:relative;">
+  <div class="copy-badge">研究團隊留存聯</div>
+
+  <div class="r-header">
+    <div class="r-hosp">高雄榮民總醫院</div>
+    <div class="r-title">研究參與補償領據</div>
+  </div>
+  <div class="r-rule"></div>
+
+  <div class="r-project">
+    <b>計畫名稱：</b>結合人工智慧衛教之痔瘡術後數位症狀監測系統：單中心前瞻性先導研究
+    　<b>主持人：</b>黃士峯 醫師　<b>單位：</b>外科部／大腸直腸外科　<b>IRB：</b>Ver 2 · 2026.04.14
+  </div>
+
+  <div class="r-body">
+    <p>茲收到參與上述研究計畫之補償費用，相關資訊如下：</p>
+    <p>
+      研究編號：<span class="r-field wide mono"></span>
+      　受試者姓名：<span class="r-field wide"></span>
+    </p>
+
+    <div class="r-amount-row">
+      <div class="r-amount-box">
+        <div class="r-amount-label">補償金額</div>
+        <div class="r-amount-val">NT$ 300</div>
+        <div class="r-amount-words">（新台幣參佰元整）</div>
+      </div>
+    </div>
+
+    <p style="font-size:11px;">
+      補償事由：完成應用程式註冊後之研究參與補償，不與問卷完成率掛鉤。
+    </p>
+    <p>
+      發放日期：民國 <span class="r-field" style="min-width:34px;"></span> 年
+      <span class="r-field" style="min-width:26px;"></span> 月
+      <span class="r-field" style="min-width:26px;"></span> 日
+    </p>
+  </div>
+
+  <div class="r-sigs">
+    <div class="r-sig-block">
+      <div class="r-sig-label">受試者簽名</div>
+      <div class="r-sig-line"></div>
+      <div class="r-sig-hint">Participant Signature</div>
+    </div>
+    <div class="r-sig-block">
+      <div class="r-sig-label">發放人簽名</div>
+      <div class="r-sig-line"></div>
+      <div class="r-sig-hint">Distributor Signature</div>
+    </div>
+  </div>
+
+  <div class="r-footer">
+    <span>高雄榮民總醫院 · 大腸直腸外科 · IRB 核准研究</span>
+    <span>本領據一式兩聯，研究團隊及受試者各執一聯</span>
+  </div>
+</div>
+
+<!-- ═══ 第二聯：受試者留存 ═══ -->
+<div class="receipt">
+  <div class="copy-badge patient">受試者留存聯</div>
+
+  <div class="r-header">
+    <div class="r-hosp">高雄榮民總醫院</div>
+    <div class="r-title">研究參與補償領據</div>
+  </div>
+  <div class="r-rule"></div>
+
+  <div class="r-project">
+    <b>計畫名稱：</b>結合人工智慧衛教之痔瘡術後數位症狀監測系統：單中心前瞻性先導研究
+    　<b>主持人：</b>黃士峯 醫師　<b>單位：</b>外科部／大腸直腸外科　<b>IRB：</b>Ver 2 · 2026.04.14
+  </div>
+
+  <div class="r-body">
+    <p>茲收到參與上述研究計畫之補償費用，相關資訊如下：</p>
+    <p>
+      研究編號：<span class="r-field wide mono"></span>
+      　受試者姓名：<span class="r-field wide"></span>
+    </p>
+
+    <div class="r-amount-row">
+      <div class="r-amount-box">
+        <div class="r-amount-label">補償金額</div>
+        <div class="r-amount-val">NT$ 300</div>
+        <div class="r-amount-words">（新台幣參佰元整）</div>
+      </div>
+    </div>
+
+    <p style="font-size:11px;">
+      補償事由：完成應用程式註冊後之研究參與補償，不與問卷完成率掛鉤。
+    </p>
+    <p>
+      發放日期：民國 <span class="r-field" style="min-width:34px;"></span> 年
+      <span class="r-field" style="min-width:26px;"></span> 月
+      <span class="r-field" style="min-width:26px;"></span> 日
+    </p>
+  </div>
+
+  <div class="r-sigs">
+    <div class="r-sig-block">
+      <div class="r-sig-label">受試者簽名</div>
+      <div class="r-sig-line"></div>
+      <div class="r-sig-hint">Participant Signature</div>
+    </div>
+    <div class="r-sig-block">
+      <div class="r-sig-label">發放人簽名</div>
+      <div class="r-sig-line"></div>
+      <div class="r-sig-hint">Distributor Signature</div>
+    </div>
+  </div>
+
+  <div class="r-footer">
+    <span>高雄榮民總醫院 · 大腸直腸外科 · IRB 核准研究</span>
+    <span>本領據一式兩聯，研究團隊及受試者各執一聯</span>
+  </div>
+</div>
+
+</body>
+</html>
