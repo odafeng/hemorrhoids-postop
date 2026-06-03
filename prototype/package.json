@@ -16,6 +16,7 @@
     "test:e2e:ui": "env $(cat .env.test 2>/dev/null | xargs) npx playwright test --ui",
     "test:e2e:debug": "env $(cat .env.test 2>/dev/null | xargs) DEBUG_E2E=1 npx playwright test",
     "sync-prompt": "node scripts/sync-prompt.mjs",
+    "seed:e2e": "node scripts/seed-e2e-users.mjs",
     "predeploy": "npm run sync-prompt"
   },
   "dependencies": {

@@ -56,6 +56,16 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
+      - name: Seed E2E test users (idempotent)
+        run: npm run seed:e2e
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          E2E_RESEARCHER_EMAIL: ${{ secrets.E2E_RESEARCHER_EMAIL }}
+          E2E_RESEARCHER_PASSWORD: ${{ secrets.E2E_RESEARCHER_PASSWORD }}
+
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
@@ -63,9 +73,14 @@ jobs:
         run: npx playwright test
         env:
           CI: true
-          # Auth test accounts were removed from Supabase. Omitting E2E_* credentials
-          # lets the account-gated specs skip via their test.skip(!email...) guards
-          # instead of failing. Restore these env vars once the accounts exist again.
+          # Auth accounts are provisioned by the seed step above, so these specs run.
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          E2E_RESEARCHER_EMAIL: ${{ secrets.E2E_RESEARCHER_EMAIL }}
+          E2E_RESEARCHER_PASSWORD: ${{ secrets.E2E_RESEARCHER_PASSWORD }}
+          # Needed for the in-test DB verification / cleanup (service-role REST calls).
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Upload E2E failure screenshots
         if: failure()
