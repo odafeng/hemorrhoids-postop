@@ -79,7 +79,7 @@ node --env-file=.env scripts/ingest-rag.mjs
 | `VAPID_PUBLIC_KEY` | Web Push VAPID 公鑰 |
 | `VAPID_PRIVATE_KEY` | Web Push VAPID 私鑰 |
 | `VAPID_SUBJECT` | `mailto:your-email@example.com` |
-| `GLOBAL_INVITE_TOKEN` | 全域邀請碼（預設 `HEMORRHOID2026`，可選） |
+| ~~`GLOBAL_INVITE_TOKEN`~~ | 已移除 — 改用 per-patient invite token（study_invites 表） |
 
 **Vercel 環境變數**：
 
@@ -111,7 +111,7 @@ vercel --prod
 { "role": "researcher", "study_id": "RESEARCHER-001" }
 ```
 
-**病人**：透過 App 註冊頁面，輸入邀請碼（預設 `HEMORRHOID2026`）+ study_id + 手術日期。
+**病人**：研究人員先在概覽頁產生 per-patient 邀請碼 → 病人透過 App 註冊頁面輸入邀請碼 + study_id + 手術日期。
 
 ## 開發
 
