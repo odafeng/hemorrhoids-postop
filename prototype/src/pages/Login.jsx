@@ -296,9 +296,11 @@ export default function Login({ onLogin, theme, onToggleTheme }) {
         )}
       </form>
 
-      <button className="btn btn-ghost" type="button" onClick={handleDemo} style={{ marginTop: 10 }}>
-        <I.User width={14} height={14} /> Demo 模式（無需登入）
-      </button>
+      {import.meta.env.DEV && (
+        <button className="btn btn-ghost" type="button" onClick={handleDemo} style={{ marginTop: 10 }}>
+          <I.User width={14} height={14} /> Demo 模式（無需登入）
+        </button>
+      )}
 
       <div style={{
         textAlign: 'center', fontSize: 10.5, color: 'var(--ink-3)',
