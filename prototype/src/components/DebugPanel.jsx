@@ -126,7 +126,7 @@ export default function DebugPanel({ userInfo, isDemo }) {
     mismatch: { color: 'var(--danger)', fontWeight: 'bold' },
   };
 
-  const Row = ({ label, value, warn }) => (
+  const renderRow = (label, value, warn) => (
     <div style={style.row}>
       <span style={style.label}>{label}</span>
       <span style={warn ? style.mismatch : style.value}>{String(value)}</span>
@@ -151,44 +151,41 @@ export default function DebugPanel({ userInfo, isDemo }) {
           <div style={{ marginTop: '4px', marginBottom: '4px', color: 'var(--warning)', fontWeight: 'bold' }}>
             — Session —
           </div>
-          <Row label="email" value={diag.sessionEmail} />
-          <Row label="user_id" value={diag.sessionUserId} />
-          <Row label="session.role" value={diag.sessionRole} />
-          <Row label="session.study_id" value={diag.sessionStudyId}
-            warn={diag.sessionStudyId !== diag.userInfoStudyId} />
-          <Row label="getUser.study_id" value={diag.getUserStudyId}
-            warn={diag.getUserStudyId !== diag.sessionStudyId} />
-          {diag.getUserError && <Row label="getUser error" value={diag.getUserError} warn />}
+          {renderRow("email", diag.sessionEmail)}
+          {renderRow("user_id", diag.sessionUserId)}
+          {renderRow("session.role", diag.sessionRole)}
+          {renderRow("session.study_id", diag.sessionStudyId, diag.sessionStudyId !== diag.userInfoStudyId)}
+          {renderRow("getUser.study_id", diag.getUserStudyId, diag.getUserStudyId !== diag.sessionStudyId)}
+          {diag.getUserError && renderRow("getUser error", diag.getUserError, true)}
 
           <div style={{ marginTop: '4px', marginBottom: '4px', color: 'var(--warning)', fontWeight: 'bold' }}>
             — App State —
           </div>
-          <Row label="userInfo.studyId" value={diag.userInfoStudyId} />
-          <Row label="userInfo.role" value={diag.userInfoRole} />
-          <Row label="userInfo.surgeryDate" value={diag.userInfoSurgeryDate} />
-          <Row label="userInfo.pod" value={diag.userInfoPod} />
+          {renderRow("userInfo.studyId", diag.userInfoStudyId)}
+          {renderRow("userInfo.role", diag.userInfoRole)}
+          {renderRow("userInfo.surgeryDate", diag.userInfoSurgeryDate)}
+          {renderRow("userInfo.pod", diag.userInfoPod)}
 
           <div style={{ marginTop: '4px', marginBottom: '4px', color: 'var(--warning)', fontWeight: 'bold' }}>
             — Patient Row —
           </div>
-          <Row label="found" value={diag.patientFound} warn={!diag.patientFound} />
-          <Row label="surgery_date" value={diag.patientSurgeryDate}
-            warn={diag.patientFound && diag.patientSurgeryDate !== diag.userInfoSurgeryDate} />
-          <Row label="study_status" value={diag.patientStudyStatus} />
-          {diag.patientError && <Row label="patient error" value={diag.patientError} warn />}
+          {renderRow("found", diag.patientFound, !diag.patientFound)}
+          {renderRow("surgery_date", diag.patientSurgeryDate, diag.patientFound && diag.patientSurgeryDate !== diag.userInfoSurgeryDate)}
+          {renderRow("study_status", diag.patientStudyStatus)}
+          {diag.patientError && renderRow("patient error", diag.patientError, true)}
 
           <div style={{ marginTop: '4px', marginBottom: '4px', color: 'var(--warning)', fontWeight: 'bold' }}>
             — Reports —
           </div>
-          <Row label="today report" value={diag.todayReportExists ? `yes (pain=${diag.todayReportPain})` : 'no'} />
-          {diag.todayReportError && <Row label="today error" value={diag.todayReportError} warn />}
-          <Row label="total reports" value={diag.allReportsCount} />
+          {renderRow("today report", diag.todayReportExists ? `yes (pain=${diag.todayReportPain})` : 'no')}
+          {diag.todayReportError && renderRow("today error", diag.todayReportError, true)}
+          {renderRow("total reports", diag.allReportsCount)}
 
           <div style={{ marginTop: '4px', marginBottom: '4px', color: 'var(--warning)', fontWeight: 'bold' }}>
             — Environment —
           </div>
-          <Row label="standalone (PWA)" value={diag.isStandalone} />
-          <Row label="timestamp" value={diag.timestamp} />
+          {renderRow("standalone (PWA)", diag.isStandalone)}
+          {renderRow("timestamp", diag.timestamp)}
         </>
       )}
       {open && !diag && <div style={{ color: 'var(--text-muted)' }}>Loading...</div>}

@@ -21,7 +21,7 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 export default function NotificationSetup({ studyId, isDemo }) {
-  const [permission, setPermission] = useState(getNotificationStatus());
+  const [permission, setPermission] = useState(() => getNotificationStatus());
   const [enabled, setEnabled] = useState(isNotificationsEnabled());
   const [time, setTime] = useState(getReminderTime());
   const [justEnabled, setJustEnabled] = useState(false);
@@ -33,7 +33,6 @@ export default function NotificationSetup({ studyId, isDemo }) {
 
   // On mount: load server prefs + check existing push subscription
   useEffect(() => {
-    setPermission(getNotificationStatus());
     if (!isDemo && studyId) {
       sb.getNotifPrefs(studyId).then(prefs => {
         if (prefs) {
@@ -43,18 +42,13 @@ export default function NotificationSetup({ studyId, isDemo }) {
           setReminderTime(prefs.hour, prefs.minute);
         }
       });
-      // Check if already subscribed to push
-      checkPushSubscription();
+      // Async — setPushStatus is called from awaited callback, not synchronously
+      navigator.serviceWorker?.ready
+        .then(reg => reg?.pushManager?.getSubscription())
+        .then(sub => setPushStatus(sub ? 'subscribed' : ''))
+        .catch(() => {});
     }
   }, [studyId, isDemo]);
-
-  const checkPushSubscription = async () => {
-    try {
-      const reg = await navigator.serviceWorker?.ready;
-      const sub = await reg?.pushManager?.getSubscription();
-      setPushStatus(sub ? 'subscribed' : '');
-    } catch { /* ignore */ }
-  };
 
   const syncToServer = (newEnabled, newHour, newMinute) => {
     if (!isDemo && studyId) {

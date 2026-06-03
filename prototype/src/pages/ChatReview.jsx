@@ -11,7 +11,7 @@ export default function ChatReview({ onNavigate, isDemo, userInfo }) {
   const [batchProcessing, setBatchProcessing] = useState(false);
   const [showBatchConfirm, setShowBatchConfirm] = useState(false);
 
-  useEffect(() => { loadChats(); }, [isDemo]);
+  useEffect(() => { loadChats(); }, [isDemo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadChats = async () => {
     setLoading(true);

@@ -304,7 +304,7 @@ export default function SurgicalRecord({ isDemo, userInfo }) {
         <div className="eyebrow">OPERATIVE RECORD</div>
         <h1 className="page-title">{isReadOnly ? '檢視手術紀錄' : '撰寫手術紀錄'}</h1>
         <p className="page-sub">
-          {patient?.surgeon_id && <>主刀：{patient.surgeon_id}　·　</>}
+          {patient?.surgeon_id && <>主刀：{patient.surgeon_id}{' · '}</>}
           術式：{patient?.surgery_type || '—'}
         </p>
       </div>

@@ -111,7 +111,7 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
   const copyToken = (token) => {
     try {
       navigator.clipboard.writeText(token);
-    } catch {}
+    } catch { /* clipboard best-effort */ }
   };
 
   const handleInviteResearcher = async () => {
@@ -143,7 +143,7 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
 
   const today = new Date().toLocaleDateString('en-CA');
 
-  useEffect(() => { loadData(); }, [isDemo]);
+  useEffect(() => { loadData(); }, [isDemo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadData = async () => {
     setLoading(true);

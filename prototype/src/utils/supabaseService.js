@@ -471,15 +471,11 @@ export async function saveReport(studyId, pod, report, reportDate) {
     report_source: 'app',
   };
 
-  console.log('[saveReport] start', { studyId, date, pod });
-
   const { data, error } = await supabase
     .from('symptom_reports')
     .upsert(payload, { onConflict: 'study_id,report_date' })
     .select()
     .single();
-
-  console.log('[saveReport] done', { data: !!data, error: error?.message });
 
   if (error) throw error;
   return data;

@@ -63,7 +63,7 @@ export default function Login({ onLogin, theme, onToggleTheme }) {
       const saved = localStorage.getItem(SAVED_EMAIL_KEY);
       if (saved) setEmail(saved);
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = async (e) => {
     e.preventDefault();

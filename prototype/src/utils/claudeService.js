@@ -5,8 +5,6 @@
 import { getAIResponse as getMockResponse } from './mockAI';
 import { logError } from './errorLogger';
 
-const isProduction = !!import.meta.env.VITE_SUPABASE_URL;
-
 function getAIChatUrl() {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   if (!supabaseUrl) return null;

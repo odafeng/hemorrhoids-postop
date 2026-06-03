@@ -129,7 +129,7 @@ export async function showReminderNotification() {
         tag: opts.tag,
       });
       return { fired: true, reason: 'fallback' };
-    } catch (e2) {
+    } catch {
       return { fired: false, reason: 'error' };
     }
   }

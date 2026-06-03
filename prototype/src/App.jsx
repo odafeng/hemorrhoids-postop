@@ -66,20 +66,24 @@ export default function App() {
   // Check consent status for patients
   useEffect(() => {
     if (authState !== 'loggedIn' || isDemo || !userInfo?.studyId) {
-      setConsentChecked(true);
+      // Non-patient or non-auth — bypass consent gate without async
+      queueMicrotask(() => setConsentChecked(true));
       return;
     }
     const isPatient = userInfo?.role === 'patient';
     if (!isPatient) {
-      setConsentChecked(true);
+      queueMicrotask(() => setConsentChecked(true));
       return;
     }
+    let cancelled = false;
     sb.getPatient(userInfo.studyId).then(patient => {
+      if (cancelled) return;
       setConsentSigned(patient?.consent_signed ?? false);
       setConsentChecked(true);
     }).catch(() => {
-      setConsentChecked(true);
+      if (!cancelled) setConsentChecked(true);
     });
+    return () => { cancelled = true; };
   }, [authState, isDemo, userInfo]);
 
   // Theme
@@ -195,7 +199,7 @@ export default function App() {
               <br />
               <button className="btn btn-secondary" style={{ fontSize: 'var(--font-xs)', opacity: 0.7 }}
                 onClick={async () => {
-                  try { await signOut(); } catch {}
+                  try { await signOut(); } catch { /* signOut best-effort */ }
                   setUserInfo(null);
                   setAuthState('loggedOut');
                 }}>回到登入頁</button>

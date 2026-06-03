@@ -17,7 +17,7 @@ const localStorageMock = (() => {
 Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock });
 
 // Reset localStorage before each test
-beforeEach(() => {
+beforeEach(() => { // eslint-disable-line no-undef
   localStorage.clear();
 });
 

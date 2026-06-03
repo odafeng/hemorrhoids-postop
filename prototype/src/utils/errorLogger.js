@@ -62,8 +62,6 @@ function shouldLog() {
   if (_recentCount >= RATE_MAX) {
     if (!_warnedSuppressed) {
       _warnedSuppressed = true;
-      // Use raw console to avoid re-entering logError
-      // eslint-disable-next-line no-console
       console.warn('[errorLogger] suppressing further errors in this window');
     }
     return false;
@@ -93,7 +91,7 @@ export async function logError(error, context = {}) {
       ? console.error : severity === Severity.WARNING ? console.warn : console.info;
     try {
       consoleFn(`[${severity.toUpperCase()}] ${context.type || 'error'}:`, errorObj.message || errorObj);
-    } catch {}
+    } catch { /* console best-effort */ }
 
     if (_sentryInitialized) {
       try {
@@ -104,7 +102,7 @@ export async function logError(error, context = {}) {
           if (context.metadata) scope.setContext('metadata', context.metadata);
           Sentry.captureException(errorObj);
         });
-      } catch {}
+      } catch { /* Sentry best-effort */ }
     }
 
     try {
@@ -124,8 +122,8 @@ export async function logError(error, context = {}) {
           timestamp: new Date().toISOString(),
         });
       }
-    } catch {}
-  } catch {
+    } catch { /* DB log best-effort */ }
+  } catch { /* swallow — logError must NEVER throw */
     // swallow everything — logError must NEVER throw or reject
   } finally {
     _inLogError = false;

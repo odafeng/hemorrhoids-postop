@@ -21,7 +21,7 @@ function yTicks(max, count = 5) {
 // =============================================
 // 1. Pain Trend — mean ± SD by POD
 // =============================================
-function PainTrendChart({ reports, patients }) {
+function PainTrendChart({ reports }) {
   const data = useMemo(() => {
     if (!reports?.length) return [];
     // Group by POD

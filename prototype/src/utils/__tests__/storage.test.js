@@ -26,7 +26,7 @@ describe('storage utils', () => {
     vi.setSystemTime(new Date(`${FIXED_TODAY}T10:00:00`));
   });
 
-  afterEach(() => {
+  afterEach(() => { // eslint-disable-line no-undef
     vi.useRealTimers();
   });
 

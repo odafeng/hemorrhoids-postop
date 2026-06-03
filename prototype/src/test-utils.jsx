@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 // Test utility: wraps components in QueryClientProvider + MemoryRouter
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';

@@ -3,7 +3,7 @@ import { getQueueCount } from '../utils/offlineQueue';
 
 export default function OfflineBanner() {
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
-  const [queueCount, setQueueCount] = useState(0);
+  const [queueCount, setQueueCount] = useState(() => getQueueCount());
 
   useEffect(() => {
     const goOffline = () => setIsOffline(true);
@@ -17,7 +17,6 @@ export default function OfflineBanner() {
   }, []);
 
   useEffect(() => {
-    setQueueCount(getQueueCount());
     const interval = setInterval(() => setQueueCount(getQueueCount()), 5000);
     return () => clearInterval(interval);
   }, []);

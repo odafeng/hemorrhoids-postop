@@ -1,6 +1,6 @@
 // Auth hook — encapsulates all auth state, session check, login/logout
 import { useState, useEffect } from 'react';
-import { onAuthStateChange, getSession, ensurePatient, getPatient, getPODFromDate, signOut } from './supabaseService';
+import { onAuthStateChange, getSession, ensurePatient, getPODFromDate, signOut } from './supabaseService';
 import supabase from './supabaseClient';
 import { seedDemoData } from './storage';
 
@@ -139,7 +139,7 @@ export function useAuth() {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLogin = (info, navigate) => {
     if (info?.demo) {

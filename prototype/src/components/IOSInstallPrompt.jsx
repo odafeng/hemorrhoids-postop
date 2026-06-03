@@ -1,23 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 /**
  * iOS PWA install prompt — shows a banner guiding iOS Safari users
  * to "Add to Home Screen" for full PWA features (notifications, etc.)
  */
 export default function IOSInstallPrompt() {
-  const [show, setShow] = useState(false);
-
-  useEffect(() => {
-    // Only show on iOS Safari, not already in standalone mode
+  const [show, setShow] = useState(() => {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches
       || window.navigator.standalone === true;
     const dismissed = localStorage.getItem('ios-install-dismissed');
-
-    if (isIOS && !isStandalone && !dismissed) {
-      setShow(true);
-    }
-  }, []);
+    return isIOS && !isStandalone && !dismissed;
+  });
 
   const handleDismiss = () => {
     localStorage.setItem('ios-install-dismissed', 'true');

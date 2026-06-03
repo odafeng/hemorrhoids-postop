@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import * as sb from '../utils/supabaseService';
 import * as I from '../components/Icons';
 
-export default function ResearcherPatientLookup({ onNavigate, isDemo, userInfo }) {
+export default function ResearcherPatientLookup({ onNavigate, isDemo }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [result, setResult] = useState(null);

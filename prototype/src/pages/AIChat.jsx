@@ -44,7 +44,7 @@ export default function AIChat({ isDemo, userInfo }) {
       setLoaded(true);
     };
     load();
-  }, [isDemo, userInfo]);
+  }, [isDemo, userInfo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (loaded) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

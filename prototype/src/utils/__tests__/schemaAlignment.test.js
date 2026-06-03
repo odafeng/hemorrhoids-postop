@@ -11,7 +11,7 @@ import { SYMPTOM_FIELDS, DB_COLUMNS, FRONTEND_REPORT_KEYS } from '../schemaContr
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
-const root = resolve(__dirname, '../../..');
+const root = resolve(import.meta.dirname, '../../..');
 
 function readSrc(relPath) {
   return readFileSync(resolve(root, relPath), 'utf-8');

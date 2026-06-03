@@ -20,7 +20,7 @@ export default function Dashboard({ onNavigate, isDemo, userInfo, onLogout, onSy
     if (data?.surgeryDate && onSyncSurgeryDate) {
       onSyncSurgeryDate(data.surgeryDate);
     }
-  }, [data?.surgeryDate]);
+  }, [data?.surgeryDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSync = async () => {
     await queryClient.invalidateQueries({ queryKey: ['dashboard'] });
