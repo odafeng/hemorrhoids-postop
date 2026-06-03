@@ -135,9 +135,8 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Tier 1: check per-patient token in study_invites table
-    let invite = null;
-    const { data: inviteRow } = await adminClient
+    // Validate per-patient invite token from study_invites table
+    const { data: invite } = await adminClient
       .from("study_invites")
       .select("*")
       .eq("invite_token", inviteToken)
@@ -146,19 +145,12 @@ Deno.serve(async (req: Request) => {
       .gte("expires_at", new Date().toISOString())
       .maybeSingle();
 
-    if (inviteRow) {
-      invite = inviteRow;
-    } else {
-      // Tier 2: check global invite token (pilot phase convenience)
-      const globalToken = Deno.env.get("GLOBAL_INVITE_TOKEN") || "HEMORRHOID2026";
-      if (inviteToken.toUpperCase() !== globalToken.toUpperCase()) {
-        console.error("Invite validation failed:", { studyId, inviteToken: "[redacted]" });
-        return new Response(JSON.stringify({ error: "Invalid or expired invite token" }), {
-          status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      // Global token matched — proceed without study_invites row
+    if (!invite) {
+      console.error("Invite validation failed:", { studyId, inviteToken: "[redacted]" });
+      return new Response(JSON.stringify({ error: "Invalid or expired invite token" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Parse surgeon prefix from study_id (e.g. "HSF-001" → "HSF")
@@ -205,17 +197,15 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Mark per-patient invite token as used (skip if global token was used)
-    if (invite) {
-      await adminClient
-        .from("study_invites")
-        .update({
-          status: "used",
-          used_by_user_id: user.id,
-          used_at: new Date().toISOString(),
-        })
-        .eq("id", invite.id);
-    }
+    // Mark per-patient invite token as used
+    await adminClient
+      .from("study_invites")
+      .update({
+        status: "used",
+        used_by_user_id: user.id,
+        used_at: new Date().toISOString(),
+      })
+      .eq("id", invite.id);
 
     // Audit trail: patient onboarding
     await adminClient.from("audit_trail").insert({
@@ -226,7 +216,7 @@ Deno.serve(async (req: Request) => {
       resource_id: studyId,
       detail: {
         surgery_date: patient.surgery_date,
-        invite_method: invite ? "per_patient_token" : "global_token",
+        invite_id: invite.id,
       },
     });
 
