@@ -1,0 +1,142 @@
+date: 2026-06-04
+weekday: 三
+phase: 收案準備
+day: 1
+objective: 正式收案前的系統總檢查與文件準備
+
+tasks:
+  - id: 1
+    title: 收案流程全面審查
+    category: review
+    status: done
+    details:
+      - 從研究人員角度完整走過 6 步收案流程
+      - 流程：產生邀請碼 → 協助病人註冊 → 簽署同意書 → 填寫手術紀錄 → 確認收案 → 每日回報
+      - 確認前端（Login → ConsentPage → Dashboard → SymptomReport）與後端（Edge Functions）資料流完整
+
+  - id: 2
+    title: 收案文件製作
+    category: docs
+    status: done
+    artifacts:
+      - file: 收案文件/收案流程指引.pdf
+        description: 研究人員 step-by-step 操作手冊（A4 橫式）
+      - file: 收案文件/收案對照表_模板.xlsx
+        description: Study ID ↔ 姓名/病歷號對照表（50 列，下拉驗證）
+      - file: 收案文件/領據_車馬費_300元.pdf
+        description: NT$300 補償費領據（兩聯式）
+      - file: 收案文件/App_QR_Code.pdf
+        description: App 安裝 QR Code 海報（A4 直式）
+
+  - id: 3
+    title: 專案資料夾整理
+    category: housekeeping
+    status: done
+    details:
+      - 開發用截圖/影片移至 開發素材/
+      - CV 移入 IRB/
+      - HTML 原始檔與生成腳本放入 收案文件/_原始檔/
+
+  - id: 4
+    title: 程式碼品質修復
+    category: code-quality
+    status: done
+    eslint_before: { errors: 46, warnings: 7 }
+    eslint_after: { errors: 0, warnings: 0 }
+    unit_tests: { total: 318, passed: 318, failed: 0 }
+    fixes:
+      - 移除 supabaseService.js saveReport() 的 debug console.log
+      - 修正 set-state-in-effect：改用 useState(initializer)
+      - 修正 static-components：DebugPanel <Row> 改為 renderRow() 函式
+      - 移除未使用變數/import（getPatient, isProduction, e2, patients 等）
+      - 修正 NotificationSetup 變數宣告順序
+      - 測試檔補上 vitest globals import
+    files_changed: 27
+
+  - id: 5
+    title: 安全性強化
+    category: security
+    status: done
+    sub_tasks:
+      - title: 隱藏 Demo 模式按鈕
+        detail: Login 頁 Demo 按鈕改為 import.meta.env.DEV 才顯示，生產環境不渲染
+      - title: 移除全域邀請碼 fallback
+        detail: patient-onboard Edge Function 移除 HEMORRHOID2026 Tier-2 fallback，強制 per-patient token
+        deployed: true
+      - title: 清除 .env.test 明文密碼
+        detail: 移除硬寫的帳密和 service role key，改為空白佔位
+
+  - id: 6
+    title: Supabase 資料庫清理
+    category: database
+    status: done
+    deleted:
+      auth_users:
+        - email: odafeng7@gmail.com
+          study_id: TEST-002
+          role: patient
+        - email: c0925806571@gmail.com
+          study_id: HSF-002
+          role: patient
+        - email: drfredrichuang@gmail.com
+          study_id: RESEARCHER-002
+          role: pi
+      tables_cleared:
+        - patients: 2
+        - symptom_reports: 4
+        - study_invites: 3
+        - ai_chat_logs: 1
+        - surgical_records: 1
+        - pending_notifications: 60
+        - audit_trail: 111
+    retained:
+      auth_users:
+        - email: odafeng@hotmail.com
+          role: pi
+      rag_documents: 106
+
+  - id: 7
+    title: 整合測試
+    category: testing
+    status: done
+    script: scripts/integration-check.mjs
+    results: { total: 32, passed: 32, failed: 0 }
+    coverage:
+      - DB 連線（Anon + Admin）
+      - RLS 權限隔離
+      - 13 張表 schema 驗證
+      - RAG 知識庫完整性（106 筆 + embeddings）
+      - Auth 系統驗證
+      - Edge Functions 認證檢查
+      - 乾淨狀態確認
+
+commits:
+  - hash: 431ff07
+    message: "docs(enrollment): add enrollment toolkit and reorganize project root"
+  - hash: 67f70ed
+    message: "fix(lint): resolve all ESLint errors and warnings (46 errors → 0)"
+  - hash: e4052f5
+    message: "fix(login): hide Demo mode button in production"
+  - hash: 6f3daa6
+    message: "security(onboard): remove global invite token fallback"
+  - hash: 0e989b6
+    message: "security(env): remove hardcoded credentials from .env.test and update docs"
+  - hash: e3985bf
+    message: "test(integration): add Supabase connectivity smoke test"
+  - hash: d57bc28
+    message: "docs(log): add research journal — Day 1 enrollment prep"
+
+system_status:
+  supabase: ACTIVE_HEALTHY
+  region: ap-south-1
+  postgres: "17.6"
+  eslint: { errors: 0, warnings: 0 }
+  unit_tests: { passed: 318, failed: 0 }
+  integration_tests: { passed: 32, failed: 0 }
+  auth_users: 1
+  business_tables_empty: true
+
+todo_next:
+  - 部署最新前端到 Vercel（含 Demo 按鈕隱藏）
+  - 第一位病人收案演練（dry run）
+  - 確認 push notification 在 iOS/Android 的表現
