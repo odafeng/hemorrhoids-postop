@@ -2,6 +2,7 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Demo Mode — Patient Smoke', () => {
+  test.skip(!!process.env.CI, 'Demo mode is dev-only (import.meta.env.DEV); absent in CI production build');
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
@@ -26,6 +27,7 @@ test.describe('Demo Mode — Patient Smoke', () => {
 });
 
 test.describe('Demo Mode — Researcher Smoke', () => {
+  test.skip(!!process.env.CI, 'Demo mode is dev-only (import.meta.env.DEV); absent in CI production build');
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });

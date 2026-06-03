@@ -8,6 +8,7 @@ const piEmail = process.env.E2E_PI_EMAIL || '';
 const piPassword = process.env.E2E_PI_PASSWORD || '';
 
 test.describe('Researcher invite — UI gating (demo)', () => {
+  test.skip(!!process.env.CI, 'Demo mode is dev-only (import.meta.env.DEV); absent in CI production build');
   test.beforeEach(async ({ page }) => {
     page.on('console', (m) => {
       if (m.type() === 'error') console.log('[BROWSER ERROR]', m.text());
