@@ -29,7 +29,7 @@ test.describe('Surgical Record — demo UI gating', () => {
 });
 
 test.describe('Surgical Record — PI real flow', () => {
-  test.skip(!piEmail || !piPassword, 'E2E_PI_EMAIL / E2E_PI_PASSWORD not set');
+  test.skip(!piEmail || !piPassword, 'PI flow not run on prod CI by default; provide E2E_PI_EMAIL + E2E_PI_PASSWORD (a clearly-fake PI account) to enable.');
 
   test.beforeEach(async ({ page }) => {
     page.on('console', (m) => {

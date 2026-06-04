@@ -9,7 +9,7 @@ const testPatientNumber = timestamp.toString().slice(-3);
 const testSurgeryDate = new Date().toLocaleDateString('en-CA');
 
 test.describe('Patient Registration Flow', () => {
-  test.skip(!inviteCode, 'E2E_INVITE_CODE not set — skipping registration tests');
+  test.skip(!inviteCode, 'Intentionally skipped on prod CI: registration creates real auth users + consumes one-time invites (would pollute the IRB study DB). Runs only when E2E_INVITE_CODE is provided against an isolated DB.');
 
   test('shows registration form with all required fields', async ({ page }) => {
     await page.goto('/');
