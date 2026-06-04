@@ -29,7 +29,7 @@ async function deleteSupabase(table: string, params: string) {
   });
 }
 
-const E2E_STUDY_ID = 'TEST-002';
+const E2E_STUDY_ID = 'TEST-001';
 
 test.describe('Auth Mode — Report & AI Chat', () => {
   test.skip(!email || !password, 'E2E_EMAIL / E2E_PASSWORD not set');

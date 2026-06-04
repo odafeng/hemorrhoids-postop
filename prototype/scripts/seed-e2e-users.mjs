@@ -1,20 +1,21 @@
-// Idempotently provision the E2E test accounts so CI never breaks when the
-// Supabase auth users get deleted. Uses the service-role key (admin API) to set
-// app_metadata, which is the trusted source for role/study_id claims
+// Idempotently provision the E2E test accounts + fixtures so CI never breaks
+// when the Supabase auth users / rows get deleted. Uses the service-role admin
+// API to set app_metadata, the trusted source for role/study_id claims
 // (see migration 20260421b_secure_claims.sql) — user_metadata is forgeable.
 //
-// Creates / updates:
-//   - patient   (E2E_EMAIL)           app_metadata { role: patient, study_id }
-//                                     + a matching `patients` row (FK target)
-//   - researcher(E2E_RESEARCHER_EMAIL) app_metadata { role: researcher }
+// Provisions:
+//   - patient    (E2E_EMAIL)            role=patient, study_id=TEST-001 + patients row (consented)
+//   - researcher (E2E_RESEARCHER_EMAIL) role=researcher
+//   - PI         (E2E_PI_EMAIL)         role=pi   (surgical-record + researcher-invite PI flows)
+//   - patients row TEST-002              lookup/surgical-record target for the PI flow
 //
-// Required env: SUPABASE_URL (or VITE_SUPABASE_URL), SUPABASE_SERVICE_ROLE_KEY,
-//               E2E_EMAIL/E2E_PASSWORD, E2E_RESEARCHER_EMAIL/E2E_RESEARCHER_PASSWORD
+// Env: SUPABASE_URL (or VITE_SUPABASE_URL), SUPABASE_SERVICE_ROLE_KEY,
+//      E2E_EMAIL/PASSWORD, E2E_RESEARCHER_EMAIL/PASSWORD, E2E_PI_EMAIL/PASSWORD
 import { createClient } from '@supabase/supabase-js';
 
 const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const STUDY_ID = process.env.E2E_STUDY_ID || 'TEST-002';
+const STUDY_ID = process.env.E2E_STUDY_ID || 'TEST-001';
 
 if (!url || !serviceKey) {
   console.error('✗ Missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY — cannot seed E2E users');
@@ -56,10 +57,10 @@ async function ensureUser(label, email, password, appMeta, userMeta) {
   }
 }
 
-async function ensurePatientRow() {
+async function ensurePatientRow(studyId, extra = {}) {
   const { error } = await admin.from('patients').upsert(
     {
-      study_id: STUDY_ID,
+      study_id: studyId,
       age: 45,
       sex: 'M',
       surgery_type: 'hemorrhoidectomy',
@@ -67,18 +68,18 @@ async function ensurePatientRow() {
       hemorrhoid_grade: 'III',
       app_activated: true,
       study_status: 'active',
-      // Pre-sign IRB consent so the patient reaches the dashboard instead of
-      // being gated to ConsentPage (App.jsx routes unconsented patients there).
       consent_signed: true,
       consent_date: surgeryDate,
+      ...extra,
     },
     { onConflict: 'study_id' },
   );
   if (error) throw error;
-  console.log(`• patients row ensured: ${STUDY_ID} (surgery_date=${surgeryDate})`);
+  console.log(`• patients row ensured: ${studyId}`);
 }
 
 try {
+  // Patient (logs in → must be consented to reach the dashboard)
   await ensureUser(
     'patient',
     process.env.E2E_EMAIL,
@@ -86,7 +87,9 @@ try {
     { role: 'patient', study_id: STUDY_ID },
     { role: 'patient', study_id: STUDY_ID, surgery_date: surgeryDate },
   );
-  await ensurePatientRow();
+  await ensurePatientRow(STUDY_ID);
+
+  // Researcher
   await ensureUser(
     'researcher',
     process.env.E2E_RESEARCHER_EMAIL,
@@ -94,6 +97,13 @@ try {
     { role: 'researcher' },
     { role: 'researcher' },
   );
+
+  // PI flow is opt-in (only seeded when E2E_PI_* is configured) — see project notes.
+  if (process.env.E2E_PI_EMAIL && process.env.E2E_PI_PASSWORD) {
+    await ensureUser('PI', process.env.E2E_PI_EMAIL, process.env.E2E_PI_PASSWORD, { role: 'pi' }, { role: 'pi' });
+    await ensurePatientRow('TEST-002'); // PI lookup / surgical-record target
+  }
+
   console.log('✓ E2E seed complete');
 } catch (err) {
   console.error('✗ E2E seed failed:', err.message || err);

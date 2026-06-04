@@ -39,10 +39,10 @@ test.describe('Researcher — Dashboard & Tools', () => {
     await page.locator('nav.bottom-nav').getByText('查詢').click();
     await expect(page.getByText('病人查詢')).toBeVisible({ timeout: 10_000 });
 
-    await page.locator('.search-box input').fill('TEST-002');
+    await page.locator('.search-box input').fill('TEST-001');
     await page.getByRole('button', { name: /查詢/ }).click();
 
-    await expect(page.getByText('TEST-002')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('TEST-001')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/Surgery Date|未建檔/)).toBeVisible({ timeout: 10_000 });
   });
 

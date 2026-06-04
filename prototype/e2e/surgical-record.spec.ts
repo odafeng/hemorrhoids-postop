@@ -47,9 +47,9 @@ test.describe('Surgical Record — PI real flow', () => {
     await page.locator('nav.bottom-nav').getByText('查詢').click();
     await expect(page.getByText('病人查詢')).toBeVisible({ timeout: 10_000 });
 
-    await page.locator('.search-box input').fill('HSF-003');
+    await page.locator('.search-box input').fill('TEST-002');
     await page.getByRole('button', { name: /^查詢/ }).click();
-    await expect(page.getByText('HSF-003')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('TEST-002')).toBeVisible({ timeout: 10_000 });
 
     await page.getByRole('button', { name: /撰寫手術紀錄/ }).click();
     await expect(page.getByText('撰寫手術紀錄')).toBeVisible({ timeout: 10_000 });
@@ -76,7 +76,7 @@ test.describe('Surgical Record — PI real flow', () => {
   });
 
   test('Reopening prefills saved values', async ({ page }) => {
-    await page.goto('/surgical-record/HSF-003');
+    await page.goto('/surgical-record/TEST-002');
     await expect(page.getByText('撰寫手術紀錄')).toBeVisible({ timeout: 10_000 });
     // procedureType should still be set from prior save
     await expect(page.getByRole('button', { name: '痔瘡切除術' })).toHaveClass(/selected/);
