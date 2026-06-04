@@ -8,7 +8,6 @@ const piEmail = process.env.E2E_PI_EMAIL || '';
 const piPassword = process.env.E2E_PI_PASSWORD || '';
 
 test.describe('Surgical Record — demo UI gating', () => {
-  test.skip(!!process.env.CI, 'Demo mode is dev-only (import.meta.env.DEV); absent in CI production build');
   test('demo researcher lookup does NOT show 撰寫手術紀錄 button', async ({ page }) => {
     // Demo mode lookup has no DB, only shows "Demo 模式不支援即時查詢"
     // which means no case-detail card → button is never rendered.

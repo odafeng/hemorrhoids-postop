@@ -296,7 +296,7 @@ export default function Login({ onLogin, theme, onToggleTheme }) {
         )}
       </form>
 
-      {import.meta.env.DEV && (
+      {(import.meta.env.DEV || import.meta.env.VITE_E2E === '1') && (
         <button className="btn btn-ghost" type="button" onClick={handleDemo} style={{ marginTop: 10 }}>
           <I.User width={14} height={14} /> Demo 模式（無需登入）
         </button>

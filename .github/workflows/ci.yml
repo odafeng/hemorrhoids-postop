@@ -55,6 +55,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_E2E: "1"  # show demo-mode button in E2E build only (prod unaffected)
 
       - name: Seed E2E test users (idempotent)
         run: npm run seed:e2e
