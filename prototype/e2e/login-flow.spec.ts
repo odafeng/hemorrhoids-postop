@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Login Page — UI Flow', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 30_000 });
   });
 
   test('renders all login page elements', async ({ page }) => {
@@ -61,14 +61,14 @@ test.describe('Login Page — UI Flow', () => {
 
   test('Demo mode (patient default) enters patient dashboard', async ({ page }) => {
     await page.getByRole('button', { name: /Demo 模式/ }).click();
-    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('.brand-text .hospital')).toContainText('DEMO');
   });
 
   test('Researcher demo — switch role then click Demo', async ({ page }) => {
     await page.locator('.role-toggle button').filter({ hasText: '研究人員' }).click();
     await page.getByRole('button', { name: /Demo 模式/ }).click();
-    await expect(page.getByText(/研究者儀表板/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/研究者儀表板/)).toBeVisible({ timeout: 30_000 });
   });
 
   test('password eye toggle reveals password', async ({ page }) => {

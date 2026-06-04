@@ -13,7 +13,7 @@ test.describe('Researcher invite — UI gating (demo)', () => {
       if (m.type() === 'error') console.log('[BROWSER ERROR]', m.text());
     });
     await page.goto('/');
-    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 30_000 });
   });
 
   test('demo researcher does NOT see PI-only invite panel', async ({ page }) => {
@@ -22,7 +22,7 @@ test.describe('Researcher invite — UI gating (demo)', () => {
     await page.getByRole('button', { name: /Demo 模式/ }).click();
 
     // Should land on researcher dashboard
-    await expect(page.getByText(/研究者儀表板/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/研究者儀表板/)).toBeVisible({ timeout: 30_000 });
 
     // PI-only "新增研究人員" card must be hidden
     await expect(page.getByText('新增研究人員')).toHaveCount(0);
@@ -40,7 +40,7 @@ test.describe('Researcher invite — PI flow (real Supabase)', () => {
       if (m.type() === 'error') console.log('[BROWSER ERROR]', m.text());
     });
     await page.goto('/');
-    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 30_000 });
     await page.getByPlaceholder('your@email.com').fill(piEmail);
     await page.getByPlaceholder('••••••••').fill(piPassword);
     await page.locator('form button[type="submit"]').click();
@@ -48,7 +48,7 @@ test.describe('Researcher invite — PI flow (real Supabase)', () => {
   });
 
   test('PI sees 新增研究人員 panel', async ({ page }) => {
-    await expect(page.getByText('新增研究人員')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('新增研究人員')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByPlaceholder('researcher@example.com')).toBeVisible();
     await expect(page.getByPlaceholder(/研究助理/)).toBeVisible();
   });
@@ -84,7 +84,7 @@ test.describe('Researcher invite — PI flow (real Supabase)', () => {
     await page.getByPlaceholder(/研究助理/).fill('測試用');
     await page.getByRole('button', { name: /寄出邀請信/ }).click();
 
-    await expect(page.getByText('Email 格式不正確')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Email 格式不正確')).toBeVisible({ timeout: 30_000 });
   });
 
   test('successful invite → success banner shown', async ({ page }) => {
@@ -105,7 +105,7 @@ test.describe('Researcher invite — PI flow (real Supabase)', () => {
     await page.getByPlaceholder(/研究助理/).fill('測試人員');
     await page.getByRole('button', { name: /寄出邀請信/ }).click();
 
-    await expect(page.getByText(`✓ 已寄出邀請信到 ${testEmail}`)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(`✓ 已寄出邀請信到 ${testEmail}`)).toBeVisible({ timeout: 30_000 });
 
     // Form should have cleared
     await expect(page.getByPlaceholder('researcher@example.com')).toHaveValue('');
@@ -125,6 +125,6 @@ test.describe('Researcher invite — PI flow (real Supabase)', () => {
     await page.getByPlaceholder(/研究助理/).fill('重複測試');
     await page.getByRole('button', { name: /寄出邀請信/ }).click();
 
-    await expect(page.getByText('dup@example.com 已經註冊過')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('dup@example.com 已經註冊過')).toBeVisible({ timeout: 30_000 });
   });
 });

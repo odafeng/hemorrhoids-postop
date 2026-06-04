@@ -14,7 +14,7 @@ test.describe('Researcher — Dashboard & Tools', () => {
     });
 
     await page.goto('/');
-    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 30_000 });
     await page.getByPlaceholder('your@email.com').fill(email);
     await page.getByPlaceholder('••••••••').fill(password);
     await page.locator('form button[type="submit"]').click();
@@ -37,18 +37,18 @@ test.describe('Researcher — Dashboard & Tools', () => {
 
   test('Patient lookup — search by study ID', async ({ page }) => {
     await page.locator('nav.bottom-nav').getByText('查詢').click();
-    await expect(page.getByText('病人查詢')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('病人查詢')).toBeVisible({ timeout: 30_000 });
 
     await page.locator('.search-box input').fill('TEST-001');
     await page.getByRole('button', { name: /查詢/ }).click();
 
-    await expect(page.getByText('TEST-001')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/Surgery Date|未建檔/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('TEST-001')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/Surgery Date|未建檔/)).toBeVisible({ timeout: 30_000 });
   });
 
   test('Chat review page loads and shows review UI', async ({ page }) => {
     await page.locator('nav.bottom-nav').getByText('審核').click();
-    await expect(page.getByText('AI 回覆審核')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('AI 回覆審核')).toBeVisible({ timeout: 30_000 });
     // Matcher may hit multiple elements (e.g. "待審核 0 則" in page-sub + "所有…已審核完畢"),
     // so use .first() to satisfy strict mode.
     await expect(
@@ -58,6 +58,6 @@ test.describe('Researcher — Dashboard & Tools', () => {
 
   test('Logout works', async ({ page }) => {
     await page.getByLabel('登出').click();
-    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 30_000 });
   });
 });

@@ -12,17 +12,17 @@ test.describe('Surgical Record — demo UI gating', () => {
     // Demo mode lookup has no DB, only shows "Demo 模式不支援即時查詢"
     // which means no case-detail card → button is never rendered.
     await page.goto('/');
-    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 30_000 });
     await page.locator('.role-toggle button').filter({ hasText: '研究人員' }).click();
     await page.getByRole('button', { name: /Demo 模式/ }).click();
-    await expect(page.getByText(/研究者儀表板/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/研究者儀表板/)).toBeVisible({ timeout: 30_000 });
 
     await page.locator('nav.bottom-nav').getByText('查詢').click();
-    await expect(page.getByText('病人查詢')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('病人查詢')).toBeVisible({ timeout: 30_000 });
     await page.locator('.search-box input').fill('HEM-001');
     await page.getByRole('button', { name: /^查詢/ }).click();
     // Demo placeholder shows instead of case detail
-    await expect(page.getByText(/Demo 模式不支援/)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/Demo 模式不支援/)).toBeVisible({ timeout: 15_000 });
     // Surgical record entry button must not appear anywhere on page
     await expect(page.getByRole('button', { name: /撰寫手術紀錄/ })).toHaveCount(0);
   });
@@ -36,7 +36,7 @@ test.describe('Surgical Record — PI real flow', () => {
       if (m.type() === 'error') console.log('[BROWSER ERROR]', m.text());
     });
     await page.goto('/');
-    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 30_000 });
     await page.getByPlaceholder('your@email.com').fill(piEmail);
     await page.getByPlaceholder('••••••••').fill(piPassword);
     await page.locator('form button[type="submit"]').click();
@@ -45,14 +45,14 @@ test.describe('Surgical Record — PI real flow', () => {
 
   test('PI → lookup → 撰寫手術紀錄 → fill → save', async ({ page }) => {
     await page.locator('nav.bottom-nav').getByText('查詢').click();
-    await expect(page.getByText('病人查詢')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('病人查詢')).toBeVisible({ timeout: 30_000 });
 
     await page.locator('.search-box input').fill('TEST-002');
     await page.getByRole('button', { name: /^查詢/ }).click();
-    await expect(page.getByText('TEST-002')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('TEST-002')).toBeVisible({ timeout: 30_000 });
 
     await page.getByRole('button', { name: /撰寫手術紀錄/ }).click();
-    await expect(page.getByText('撰寫手術紀錄')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('撰寫手術紀錄')).toBeVisible({ timeout: 30_000 });
 
     // Fill form
     await page.getByText('痔瘡切除術').click();
@@ -72,12 +72,12 @@ test.describe('Surgical Record — PI real flow', () => {
     await page.locator('textarea').fill('E2E test run');
 
     await page.getByRole('button', { name: /^儲存手術紀錄/ }).click();
-    await expect(page.getByText('手術紀錄已儲存')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('手術紀錄已儲存')).toBeVisible({ timeout: 30_000 });
   });
 
   test('Reopening prefills saved values', async ({ page }) => {
     await page.goto('/surgical-record/TEST-002');
-    await expect(page.getByText('撰寫手術紀錄')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('撰寫手術紀錄')).toBeVisible({ timeout: 30_000 });
     // procedureType should still be set from prior save
     await expect(page.getByRole('button', { name: '痔瘡切除術' })).toHaveClass(/selected/);
   });

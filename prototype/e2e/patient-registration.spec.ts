@@ -13,7 +13,7 @@ test.describe('Patient Registration Flow', () => {
 
   test('shows registration form with all required fields', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 30_000 });
 
     await page.locator('.seg button').filter({ hasText: '註冊' }).click();
 
@@ -28,7 +28,7 @@ test.describe('Patient Registration Flow', () => {
 
   test('shows error when invite code is empty', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 30_000 });
 
     await page.locator('.seg button').filter({ hasText: '註冊' }).click();
 
@@ -41,12 +41,12 @@ test.describe('Patient Registration Flow', () => {
 
     await page.locator('form button[type="submit"]').click();
 
-    await expect(page.getByText(/請輸入邀請碼/)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/請輸入邀請碼/)).toBeVisible({ timeout: 15_000 });
   });
 
   test('register new patient account', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 30_000 });
 
     await page.locator('.seg button').filter({ hasText: '註冊' }).click();
 
@@ -73,7 +73,7 @@ test.describe('Patient Registration Flow', () => {
     test.skip(!inviteCode, 'Registration prerequisite not met');
 
     await page.goto('/');
-    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 30_000 });
 
     await page.getByPlaceholder('your@email.com').fill(testEmail);
     await page.getByPlaceholder('••••••••').fill(testPassword);

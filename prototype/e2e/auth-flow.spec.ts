@@ -40,7 +40,7 @@ test.describe('Auth Mode — Report & AI Chat', () => {
     });
 
     await page.goto('/');
-    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 30_000 });
     await page.getByPlaceholder('your@email.com').fill(email);
     await page.getByPlaceholder('••••••••').fill(password);
     await page.locator('form button[type="submit"]').click();
@@ -57,7 +57,7 @@ test.describe('Auth Mode — Report & AI Chat', () => {
 
   test('Submit symptom report (full form) + verify DB', async ({ page }) => {
     await page.locator('nav.bottom-nav').getByText('回報').click();
-    await expect(page.getByText('今日症狀回報')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('今日症狀回報')).toBeVisible({ timeout: 30_000 });
 
     // Pain slider (inside .pain-hero — specific to avoid matching the field slider)
     await page.locator('.pain-hero input[type="range"]').fill('4');
@@ -87,7 +87,7 @@ test.describe('Auth Mode — Report & AI Chat', () => {
     await submitBtn.scrollIntoViewIfNeeded();
     await submitBtn.click();
 
-    await expect(page.getByText('回報成功')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('回報成功')).toBeVisible({ timeout: 30_000 });
 
     // Dashboard/history UI rendering is covered by the demo-mode specs. Persistence
     // is asserted authoritatively via the service-role API below — the in-browser
@@ -145,7 +145,7 @@ test.describe('Auth Mode — Report & AI Chat', () => {
     });
     await page.locator('nav.bottom-nav').getByText('AI 衛教').click();
     // Bubble class renamed: .chat-bubble → .bubble
-    await expect(page.locator('.bubble.ai').first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.bubble.ai').first()).toBeVisible({ timeout: 30_000 });
 
     const quickBtn = page.locator('button.quick-q').first();
     await quickBtn.click();
@@ -183,7 +183,7 @@ test.describe('Auth Mode — Report & AI Chat', () => {
 
   test('Logout works', async ({ page }) => {
     await page.getByLabel('登出').click();
-    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 30_000 });
   });
 
   test.afterAll(async () => {

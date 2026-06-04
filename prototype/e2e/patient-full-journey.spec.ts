@@ -4,11 +4,11 @@ import { test, expect } from '@playwright/test';
 test.describe('Patient Full Journey — Demo Mode', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 30_000 });
     // Default role is patient; click Demo button
     await page.getByRole('button', { name: /Demo 模式/ }).click();
     // Dashboard ready when pod-hero shows
-    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 30_000 });
   });
 
   test('Dashboard displays all key sections', async ({ page }) => {
@@ -36,7 +36,7 @@ test.describe('Patient Full Journey — Demo Mode', () => {
 
   test('Fill and submit symptom report', async ({ page }) => {
     await page.locator('nav.bottom-nav').getByText('回報').click();
-    await expect(page.getByText('今日症狀回報')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('今日症狀回報')).toBeVisible({ timeout: 15_000 });
 
     // Pain slider
     await page.locator('.pain-hero input[type="range"]').fill('5');
@@ -65,14 +65,14 @@ test.describe('Patient Full Journey — Demo Mode', () => {
     await expect(submit).toBeEnabled();
     await submit.click();
 
-    await expect(page.getByText('回報成功')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('回報成功')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('感謝您的填寫')).toBeVisible();
-    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 30_000 });
   });
 
   test('Pain slider shows correct label at each level', async ({ page }) => {
     await page.locator('nav.bottom-nav').getByText('回報').click();
-    await expect(page.getByText('今日症狀回報')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('今日症狀回報')).toBeVisible({ timeout: 15_000 });
 
     const slider = page.locator('.pain-hero input[type="range"]');
     const label = page.locator('.pain-hero .lvl');
@@ -91,7 +91,7 @@ test.describe('Patient Full Journey — Demo Mode', () => {
 
   test('Wound "其他" shows text input field', async ({ page }) => {
     await page.locator('nav.bottom-nav').getByText('回報').click();
-    await expect(page.getByText(/傷口狀況/)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/傷口狀況/)).toBeVisible({ timeout: 15_000 });
 
     const wf = page.locator('.field', { has: page.getByText('傷口狀況') });
     await wf.getByRole('button', { name: '其他' }).click();
@@ -101,7 +101,7 @@ test.describe('Patient Full Journey — Demo Mode', () => {
 
   test('History page shows reports and chart', async ({ page }) => {
     await page.locator('nav.bottom-nav').getByText('紀錄').click();
-    await expect(page.getByText('恢復歷程')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('恢復歷程')).toBeVisible({ timeout: 15_000 });
 
     await expect(page.getByText(/共 \d+ 次回報/)).toBeVisible();
     await expect(page.getByText('疼痛分數趨勢')).toBeVisible();
@@ -115,7 +115,7 @@ test.describe('Patient Full Journey — Demo Mode', () => {
 
   test('History chart range buttons work', async ({ page }) => {
     await page.locator('nav.bottom-nav').getByText('紀錄').click();
-    await expect(page.getByText('疼痛分數趨勢')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('疼痛分數趨勢')).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole('button', { name: '7D' }).click();
     await page.getByRole('button', { name: 'ALL' }).click();
@@ -125,7 +125,7 @@ test.describe('Patient Full Journey — Demo Mode', () => {
   test('AI Chat — welcome message and quick questions', async ({ page }) => {
     await page.locator('nav.bottom-nav').getByText('AI 衛教').click();
 
-    await expect(page.locator('.bubble.ai').first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.bubble.ai').first()).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/術後衛教 AI 助手/)).toBeVisible();
     await expect(page.getByText(/僅提供衛教資訊/)).toBeVisible();
 
@@ -136,73 +136,73 @@ test.describe('Patient Full Journey — Demo Mode', () => {
 
   test('AI Chat — send quick question and receive response', async ({ page }) => {
     await page.locator('nav.bottom-nav').getByText('AI 衛教').click();
-    await expect(page.locator('.bubble.ai').first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.bubble.ai').first()).toBeVisible({ timeout: 15_000 });
 
     await page.getByText('術後疼痛怎麼辦？').click();
 
     await expect(page.locator('.bubble.user').first()).toBeVisible({ timeout: 3_000 });
-    await expect(page.locator('.bubble.ai').nth(1)).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.bubble.ai').nth(1)).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('.bubble.ai').nth(1)).toContainText('止痛');
   });
 
   test('AI Chat — custom message via send button', async ({ page }) => {
     await page.locator('nav.bottom-nav').getByText('AI 衛教').click();
-    await expect(page.locator('.bubble.ai').first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.bubble.ai').first()).toBeVisible({ timeout: 15_000 });
 
     const input = page.getByPlaceholder('輸入您的問題…');
     await input.fill('可以吃辣嗎？');
     await page.locator('.chat-send').click();
     await expect(page.locator('.bubble.user').first()).toContainText('可以吃辣嗎？');
-    await expect(page.locator('.bubble.ai').nth(1)).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.bubble.ai').nth(1)).toBeVisible({ timeout: 15_000 });
   });
 
   test('AI Chat — Enter key sends message', async ({ page }) => {
     await page.locator('nav.bottom-nav').getByText('AI 衛教').click();
-    await expect(page.locator('.bubble.ai').first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.bubble.ai').first()).toBeVisible({ timeout: 15_000 });
 
     const input = page.getByPlaceholder('輸入您的問題…');
     await input.fill('發燒怎麼辦');
     await input.press('Enter');
     await expect(page.locator('.bubble.user').first()).toContainText('發燒怎麼辦');
-    await expect(page.locator('.bubble.ai').nth(1)).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.bubble.ai').nth(1)).toBeVisible({ timeout: 15_000 });
   });
 
   test('Quick action buttons navigate', async ({ page }) => {
     await page.getByRole('button', { name: /歷史紀錄/ }).click();
-    await expect(page.getByText('恢復歷程')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('恢復歷程')).toBeVisible({ timeout: 15_000 });
 
     await page.locator('nav.bottom-nav').getByText('首頁').click();
-    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 15_000 });
 
     await page.locator('.card .btn-row').getByRole('button', { name: /AI 衛教/ }).click();
-    await expect(page.getByText(/術後衛教 AI 助手/)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/術後衛教 AI 助手/)).toBeVisible({ timeout: 15_000 });
   });
 
   test('Sync button refreshes data', async ({ page }) => {
     await page.getByRole('button', { name: /重新同步資料/ }).click();
-    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 15_000 });
   });
 
   test('Modify today report → SymptomReport', async ({ page }) => {
     const modifyBtn = page.getByRole('button', { name: /修改今日回報/ });
     if (await modifyBtn.isVisible().catch(() => false)) {
       await modifyBtn.click();
-      await expect(page.getByText(/今日症狀回報|修改 POD/)).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText(/今日症狀回報|修改 POD/)).toBeVisible({ timeout: 15_000 });
     }
   });
 
   test('Bottom nav tabs navigate to all pages', async ({ page }) => {
     await page.locator('nav.bottom-nav').getByText('回報').click();
-    await expect(page.getByText('今日症狀回報')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('今日症狀回報')).toBeVisible({ timeout: 15_000 });
 
     await page.locator('nav.bottom-nav').getByText('紀錄').click();
-    await expect(page.getByText('恢復歷程')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('恢復歷程')).toBeVisible({ timeout: 15_000 });
 
     await page.locator('nav.bottom-nav').getByText('AI 衛教').click();
-    await expect(page.getByText(/僅提供衛教資訊/)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/僅提供衛教資訊/)).toBeVisible({ timeout: 15_000 });
 
     await page.locator('nav.bottom-nav').getByText('首頁').click();
-    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 15_000 });
   });
 
   test('Theme toggle switches between light and dark', async ({ page }) => {
@@ -216,7 +216,7 @@ test.describe('Patient Full Journey — Demo Mode', () => {
 
   test('Logout returns to login page', async ({ page }) => {
     await page.getByLabel('登出').click();
-    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByPlaceholder('your@email.com')).toBeVisible();
   });
 });

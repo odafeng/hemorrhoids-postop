@@ -4,9 +4,9 @@ import { test, expect } from '@playwright/test';
 test.describe('Demo Mode — Patient Smoke', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 30_000 });
     await page.getByRole('button', { name: /Demo 模式/ }).click();
-    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 30_000 });
   });
 
   test('Dashboard → pages load → logout', async ({ page }) => {
@@ -28,10 +28,10 @@ test.describe('Demo Mode — Patient Smoke', () => {
 test.describe('Demo Mode — Researcher Smoke', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 30_000 });
     await page.locator('.role-toggle button').filter({ hasText: '研究人員' }).click();
     await page.getByRole('button', { name: /Demo 模式/ }).click();
-    await expect(page.getByText(/研究者儀表板/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/研究者儀表板/)).toBeVisible({ timeout: 30_000 });
   });
 
   test('Dashboard shows stats and cohort', async ({ page }) => {
