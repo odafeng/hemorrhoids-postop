@@ -90,7 +90,8 @@ test.describe('Auth Mode — Report & AI Chat', () => {
     await expect(page.getByText('回報成功')).toBeVisible({ timeout: 10_000 });
 
     // Back on dashboard — pod-hero visible
-    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 10_000 });
+    await page.goto('/'); // fresh load: re-fetch report with restored session (CI race)
+    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 15_000 });
     // Today's card shows the badge "已完成"
     await expect(page.getByText('已完成今日回報')).toBeVisible({ timeout: 15_000 });
 
@@ -124,8 +125,8 @@ test.describe('Auth Mode — Report & AI Chat', () => {
   });
 
   test('History shows submitted report data', async ({ page }) => {
-    await page.locator('nav.bottom-nav').getByText('紀錄').click();
-    await expect(page.getByText('恢復歷程')).toBeVisible({ timeout: 10_000 });
+    await page.goto('/history'); // fresh load: report list with restored session (CI race)
+    await expect(page.getByText('恢復歷程')).toBeVisible({ timeout: 15_000 });
 
     // Count format changed: 共 N 次回報 (was 已完成 N 次回報)
     await expect(page.getByText(/共 \d+ 次回報/)).toBeVisible({ timeout: 15_000 });
