@@ -51,12 +51,8 @@ test.describe('Auth Mode — Report & AI Chat', () => {
       throw new Error(`Login failed — still on login page. Page text: ${bodyText.slice(0, 500)}`);
     });
 
-    // Dashboard ready. First authenticated read after login can transiently miss
-    // the session token under load; reload-poll until the dashboard renders.
-    await expect(async () => {
-      if (!(await page.locator('.pod-hero').isVisible())) await page.goto('/');
-      await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 5_000 });
-    }).toPass({ timeout: 40_000 });
+    // Dashboard ready when pod-hero renders (uses the in-memory login session).
+    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 20_000 });
   });
 
   test('Submit symptom report (full form) + verify DB', async ({ page }) => {
@@ -93,12 +89,11 @@ test.describe('Auth Mode — Report & AI Chat', () => {
 
     await expect(page.getByText('回報成功')).toBeVisible({ timeout: 10_000 });
 
-    // Reload-poll the dashboard until the just-written report is reflected.
-    await expect(async () => {
-      await page.goto('/');
-      await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByText('已完成今日回報')).toBeVisible({ timeout: 5_000 });
-    }).toPass({ timeout: 40_000 });
+    // App SPA-navigates back to the dashboard and invalidates the report query on
+    // completion; assert via that in-memory session (a full page reload drops the
+    // auth token on the CI runner and reads come back empty).
+    await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('已完成今日回報')).toBeVisible({ timeout: 15_000 });
 
     // DB verification
     if (serviceKey && supabaseUrl) {
@@ -130,13 +125,11 @@ test.describe('Auth Mode — Report & AI Chat', () => {
   });
 
   test('History shows submitted report data', async ({ page }) => {
+    await page.locator('nav.bottom-nav').getByText('紀錄').click();
+    await expect(page.getByText('恢復歷程')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/共 \d+ 次回報/)).toBeVisible({ timeout: 15_000 });
     const today = new Date().toLocaleDateString('en-CA');
-    await expect(async () => {
-      await page.goto('/history');
-      await expect(page.getByText('恢復歷程')).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByText(/共 \d+ 次回報/)).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByText(today).first()).toBeVisible({ timeout: 5_000 });
-    }).toPass({ timeout: 40_000 });
+    await expect(page.getByText(today).first()).toBeVisible({ timeout: 15_000 });
 
     // Timeline items now use .tl-item (template-aligned)
     const tlItems = page.locator('.tl-item');
