@@ -145,6 +145,13 @@ test.describe('Auth Mode — Report & AI Chat', () => {
   });
 
   test('AI Chat — ask question and get Claude response + verify DB', async ({ page }) => {
+    // CI must not call the paid Claude API: stub ai-chat with a deterministic SSE stream.
+    await page.route('**/functions/v1/ai-chat', (route) => {
+      const NL = String.fromCharCode(10);
+      const body = 'data: ' + JSON.stringify({ type: 'delta', text: '痔瘡術後請保持傷口清潔乾燥，溫水坐浴，並依醫囑服藥。' }) + NL + NL
+               + 'data: ' + JSON.stringify({ type: 'done', sources: [] }) + NL + NL;
+      return route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body });
+    });
     await page.locator('nav.bottom-nav').getByText('AI 衛教').click();
     // Bubble class renamed: .chat-bubble → .bubble
     await expect(page.locator('.bubble.ai').first()).toBeVisible({ timeout: 10_000 });

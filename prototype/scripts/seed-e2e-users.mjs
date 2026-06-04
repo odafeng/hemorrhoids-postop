@@ -101,7 +101,7 @@ try {
   // PI flow is opt-in (only seeded when E2E_PI_* is configured) — see project notes.
   if (process.env.E2E_PI_EMAIL && process.env.E2E_PI_PASSWORD) {
     await ensureUser('PI', process.env.E2E_PI_EMAIL, process.env.E2E_PI_PASSWORD, { role: 'pi' }, { role: 'pi' });
-    await ensurePatientRow('TEST-002'); // PI lookup / surgical-record target
+    await ensurePatientRow('TEST-002', { surgeon_id: 'HSF' }); // PI lookup / surgical-record target
   }
 
   console.log('✓ E2E seed complete');

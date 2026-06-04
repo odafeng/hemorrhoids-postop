@@ -56,11 +56,11 @@ test.describe('Surgical Record — PI real flow', () => {
 
     // Fill form
     await page.getByText('痔瘡切除術').click();
-    await page.getByRole('button', { name: 'Closed' }).click();
+    await page.getByRole('button', { name: /^Closed / }).click();
     await page.getByRole('button', { name: 'Grade III' }).click();
-    await page.getByRole('button', { name: '3' }).click();
-    await page.getByRole('button', { name: '7' }).click();
-    await page.getByRole('button', { name: '11' }).click();
+    await page.getByRole('button', { name: '3', exact: true }).click();
+    await page.getByRole('button', { name: '7', exact: true }).click();
+    await page.getByRole('button', { name: '11', exact: true }).click();
 
     // Blood loss / duration
     await page.locator('input[type="number"]').first().fill('15');

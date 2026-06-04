@@ -38,6 +38,19 @@ jobs:
       run:
         working-directory: prototype
 
+    # E2E runs against an ephemeral LOCAL Supabase (spun up by the CLI inside the
+    # runner) — never prod. Fixtures use clearly-fake TEST- study_ids and
+    # local-only accounts, so nothing here can touch real IRB study data.
+    env:
+      VITE_E2E: "1" # reveal the demo-mode button in the E2E build (prod unaffected)
+      E2E_EMAIL: e2e-patient@example.com
+      E2E_PASSWORD: E2ePass-Aa1!
+      E2E_RESEARCHER_EMAIL: e2e-researcher@example.com
+      E2E_RESEARCHER_PASSWORD: E2eRes-Aa1!
+      E2E_PI_EMAIL: e2e-pi@example.com
+      E2E_PI_PASSWORD: E2ePi-Aa1!
+      E2E_INVITE_CODE: E2E-TEST-INVITE-001
+
     steps:
       - uses: actions/checkout@v4
 
@@ -47,25 +60,30 @@ jobs:
           cache: npm
           cache-dependency-path: prototype/package-lock.json
 
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
       - name: Install dependencies
         run: npm ci
 
-      - name: Build for preview (with Supabase env)
+      - name: Start local Supabase + export connection env
+        run: |
+          supabase start -x studio,realtime,storage-api,imgproxy,inbucket,vector
+          supabase status -o env > /tmp/sbenv
+          set -a; . /tmp/sbenv; set +a
+          {
+            echo "VITE_SUPABASE_URL=$API_URL"
+            echo "SUPABASE_URL=$API_URL"
+            echo "VITE_SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+          } >> "$GITHUB_ENV"
+
+      - name: Build for preview (against local Supabase)
         run: npm run build
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_E2E: "1"  # show demo-mode button in E2E build only (prod unaffected)
 
       - name: Seed E2E test users (idempotent)
         run: npm run seed:e2e
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
-          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
-          E2E_RESEARCHER_EMAIL: ${{ secrets.E2E_RESEARCHER_EMAIL }}
-          E2E_RESEARCHER_PASSWORD: ${{ secrets.E2E_RESEARCHER_PASSWORD }}
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
@@ -74,14 +92,10 @@ jobs:
         run: npx playwright test
         env:
           CI: true
-          # Auth accounts are provisioned by the seed step above, so these specs run.
-          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
-          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
-          E2E_RESEARCHER_EMAIL: ${{ secrets.E2E_RESEARCHER_EMAIL }}
-          E2E_RESEARCHER_PASSWORD: ${{ secrets.E2E_RESEARCHER_PASSWORD }}
-          # Needed for the in-test DB verification / cleanup (service-role REST calls).
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Stop local Supabase
+        if: always()
+        run: supabase stop --no-backup || true
 
       - name: Upload E2E failure screenshots
         if: failure()
