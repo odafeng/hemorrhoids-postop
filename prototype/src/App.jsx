@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, NavLink } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import SymptomReport from './pages/SymptomReport';
@@ -42,6 +43,7 @@ const researcherTabs = [
 
 export default function App() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const {
     authState, isDemo, userInfo, loadingTooLong,
     handleLogin, handleLogout, syncSurgeryDate,
@@ -250,10 +252,10 @@ export default function App() {
                 navigate(pathMap[tab] || '/');
               }} {...commonProps} />
         } />
-        <Route path="/report" element={<SymptomReport onComplete={() => { setRefreshKey(k => k + 1); navigate('/'); }} {...commonProps} />} />
+        <Route path="/report" element={<SymptomReport onComplete={async () => { await queryClient.invalidateQueries({ queryKey: ['dashboard'] }); await queryClient.invalidateQueries({ queryKey: ['history'] }); setRefreshKey(k => k + 1); navigate('/'); }} {...commonProps} />} />
         <Route path="/history" element={<History key={refreshKey} {...commonProps} />} />
         <Route path="/chat" element={<AIChat {...commonProps} />} />
-        <Route path="/survey" element={<UsabilitySurvey onComplete={() => { setRefreshKey(k => k + 1); navigate('/'); }} {...commonProps} />} />
+        <Route path="/survey" element={<UsabilitySurvey onComplete={async () => { await queryClient.invalidateQueries({ queryKey: ['dashboard'] }); await queryClient.invalidateQueries({ queryKey: ['history'] }); setRefreshKey(k => k + 1); navigate('/'); }} {...commonProps} />} />
 
         {/* Researcher routes */}
         <Route path="/researcher" element={
