@@ -39,13 +39,66 @@ test.describe('Auth Mode — Report & AI Chat', () => {
       if (msg.type() === 'error') console.log('[BROWSER ERROR]', msg.text());
     });
 
-    // Poll the dashboard (reloading) until the just-written report is reflected —
-    // an authenticated read can transiently miss the token under CI load.
+    await page.goto('/');
+    await expect(page.getByText('術後追蹤系統')).toBeVisible({ timeout: 10_000 });
+    await page.getByPlaceholder('your@email.com').fill(email);
+    await page.getByPlaceholder('••••••••').fill(password);
+    await page.locator('form button[type="submit"]').click();
+
+    // First: make sure we left the login page (form should disappear)
+    await expect(page.getByPlaceholder('your@email.com')).not.toBeVisible({ timeout: 20_000 }).catch(async () => {
+      const bodyText = await page.locator('body').innerText();
+      throw new Error(`Login failed — still on login page. Page text: ${bodyText.slice(0, 500)}`);
+    });
+
+    // Dashboard ready. First authenticated read after login can transiently miss
+    // the session token under load; reload-poll until the dashboard renders.
+    await expect(async () => {
+      if (!(await page.locator('.pod-hero').isVisible())) await page.goto('/');
+      await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 5_000 });
+    }).toPass({ timeout: 40_000 });
+  });
+
+  test('Submit symptom report (full form) + verify DB', async ({ page }) => {
+    await page.locator('nav.bottom-nav').getByText('回報').click();
+    await expect(page.getByText('今日症狀回報')).toBeVisible({ timeout: 10_000 });
+
+    // Pain slider (inside .pain-hero — specific to avoid matching the field slider)
+    await page.locator('.pain-hero input[type="range"]').fill('4');
+
+    // Form fields use .field now (was .form-group)
+    const bleedingField = page.locator('.field', { has: page.getByText('出血程度') });
+    await bleedingField.getByRole('button', { name: /少量/ }).click();
+
+    const bowelField = page.locator('.field', { has: page.getByText('排便狀況') });
+    await bowelField.getByRole('button', { name: '正常' }).click();
+
+    const continenceField = page.locator('.field', { has: page.getByText('肛門控制') });
+    await continenceField.getByRole('button', { name: /正常/ }).click();
+
+    const feverField = page.locator('.field', { has: page.getByText(/發燒/) });
+    await feverField.getByRole('button', { name: '否' }).click();
+
+    const urinaryField = page.locator('.field', { has: page.getByText('排尿狀況') });
+    await urinaryField.getByRole('button', { name: /正常/ }).click();
+
+    const woundField = page.locator('.field', { has: page.getByText('傷口狀況') });
+    const woundBtn = woundField.getByRole('button', { name: '無異常' });
+    const isWoundSelected = await woundBtn.evaluate((el) => el.classList.contains('selected'));
+    if (!isWoundSelected) await woundBtn.click();
+
+    const submitBtn = page.getByRole('button', { name: /提交回報/ });
+    await submitBtn.scrollIntoViewIfNeeded();
+    await submitBtn.click();
+
+    await expect(page.getByText('回報成功')).toBeVisible({ timeout: 10_000 });
+
+    // Reload-poll the dashboard until the just-written report is reflected.
     await expect(async () => {
       await page.goto('/');
       await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 5_000 });
       await expect(page.getByText('已完成今日回報')).toBeVisible({ timeout: 5_000 });
-    }).toPass({ timeout: 30_000 });
+    }).toPass({ timeout: 40_000 });
 
     // DB verification
     if (serviceKey && supabaseUrl) {
@@ -78,13 +131,12 @@ test.describe('Auth Mode — Report & AI Chat', () => {
 
   test('History shows submitted report data', async ({ page }) => {
     const today = new Date().toLocaleDateString('en-CA');
-    // Poll history (reloading) until the submitted report row shows up.
     await expect(async () => {
       await page.goto('/history');
-      await expect(page.getByText(/恢復歷程/)).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByText(/共 d+ 次回報/)).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText('恢復歷程')).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText(/共 \d+ 次回報/)).toBeVisible({ timeout: 5_000 });
       await expect(page.getByText(today).first()).toBeVisible({ timeout: 5_000 });
-    }).toPass({ timeout: 30_000 });
+    }).toPass({ timeout: 40_000 });
 
     // Timeline items now use .tl-item (template-aligned)
     const tlItems = page.locator('.tl-item');

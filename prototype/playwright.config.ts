@@ -6,7 +6,7 @@ const isDebug = !!process.env.DEBUG_E2E;
 export default defineConfig({
   testDir: './e2e',
   timeout: isDebug ? 120_000 : 30_000,
-  retries: isCI ? 4 : isDebug ? 0 : 1,
+  retries: isCI ? 2 : isDebug ? 0 : 1,
   workers: isDebug ? 1 : undefined,
   use: {
     baseURL: isCI ? 'http://localhost:4173' : 'http://localhost:5173',
