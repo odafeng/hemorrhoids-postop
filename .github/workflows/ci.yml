@@ -69,7 +69,7 @@ jobs:
 
       - name: Start local Supabase + export connection env
         run: |
-          supabase start -x studio,realtime,storage-api,imgproxy,inbucket,vector
+          supabase start -x studio,realtime,storage-api,imgproxy,inbucket,vector,edge-runtime
           supabase status -o env > /tmp/sbenv
           set -a; . /tmp/sbenv; set +a
           {
