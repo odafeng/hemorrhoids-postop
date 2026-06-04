@@ -67,6 +67,10 @@ async function ensurePatientRow() {
       hemorrhoid_grade: 'III',
       app_activated: true,
       study_status: 'active',
+      // Pre-sign IRB consent so the patient reaches the dashboard instead of
+      // being gated to ConsentPage (App.jsx routes unconsented patients there).
+      consent_signed: true,
+      consent_date: surgeryDate,
     },
     { onConflict: 'study_id' },
   );
