@@ -92,7 +92,7 @@ test.describe('Auth Mode — Report & AI Chat', () => {
     // Back on dashboard — pod-hero visible
     await expect(page.locator('.pod-hero')).toBeVisible({ timeout: 10_000 });
     // Today's card shows the badge "已完成"
-    await expect(page.getByText('已完成今日回報')).toBeVisible();
+    await expect(page.getByText('已完成今日回報')).toBeVisible({ timeout: 15_000 });
 
     // DB verification
     if (serviceKey && supabaseUrl) {
@@ -128,10 +128,10 @@ test.describe('Auth Mode — Report & AI Chat', () => {
     await expect(page.getByText('恢復歷程')).toBeVisible({ timeout: 10_000 });
 
     // Count format changed: 共 N 次回報 (was 已完成 N 次回報)
-    await expect(page.getByText(/共 \d+ 次回報/)).toBeVisible();
+    await expect(page.getByText(/共 \d+ 次回報/)).toBeVisible({ timeout: 15_000 });
 
     const today = new Date().toLocaleDateString('en-CA');
-    await expect(page.getByText(today).first()).toBeVisible();
+    await expect(page.getByText(today).first()).toBeVisible({ timeout: 15_000 });
 
     // Timeline items now use .tl-item (template-aligned)
     const tlItems = page.locator('.tl-item');
@@ -160,13 +160,15 @@ test.describe('Auth Mode — Report & AI Chat', () => {
     await expect(secondBubble.getByText('僅供衛教參考')).toBeVisible();
 
     if (serviceKey && supabaseUrl) {
-      const chatLogs = await querySupabase(
-        'ai_chat_logs',
-        `study_id=eq.${E2E_STUDY_ID}&order=created_at.desc&limit=1&select=*`
-      );
-
-      expect(chatLogs).toBeTruthy();
-      expect(chatLogs.length).toBe(1);
+      // saveChatLog runs after the AI bubble renders, so poll until the row lands.
+      let chatLogs;
+      await expect.poll(async () => {
+        chatLogs = await querySupabase(
+          'ai_chat_logs',
+          `study_id=eq.${E2E_STUDY_ID}&order=created_at.desc&limit=1&select=*`
+        );
+        return chatLogs?.length ?? 0;
+      }, { timeout: 15_000 }).toBeGreaterThanOrEqual(1);
 
       const log = chatLogs[0];
       expect(log.user_message).toBeTruthy();
