@@ -67,7 +67,7 @@ describe('Schema Alignment — Frontend ↔ DB', () => {
   });
 
   it('migration SQL references all DB columns', () => {
-    const src = readSrc('supabase/migrations/20260324_urinary_continence.sql');
+    const src = readSrc('supabase/migrations/20260324000000_urinary_continence.sql');
 
     // New columns should be in ALTER TABLE
     expect(src).toContain('urinary');
@@ -87,7 +87,7 @@ describe('Schema Alignment — Frontend ↔ DB', () => {
   });
 
   it('enum values in schemaContract match alert trigger SQL', () => {
-    const src = readSrc('supabase/migrations/20260324_urinary_continence.sql');
+    const src = readSrc('supabase/migrations/20260324000000_urinary_continence.sql');
 
     // Check that alert-critical enum values appear in the trigger SQL
     const criticalValues = ['持續', '血塊', '未排', '尿不出來', '困難', '失禁', '滲便'];
@@ -114,7 +114,7 @@ describe('Schema Alignment — Frontend ↔ DB', () => {
 
   it('all symptom_reports columns exist across schema.sql + migrations', () => {
     const schema = readSrc('db/schema.sql');
-    const migration = readSrc('supabase/migrations/20260324_urinary_continence.sql');
+    const migration = readSrc('supabase/migrations/20260324000000_urinary_continence.sql');
     const combined = schema + '\n' + migration;
 
     // Every DB column from schemaContract must appear somewhere
@@ -124,12 +124,12 @@ describe('Schema Alignment — Frontend ↔ DB', () => {
   });
 
   it('alert trigger migration fires on INSERT OR UPDATE', () => {
-    const triggerFix = readSrc('supabase/migrations/20260326a_alert_trigger_update.sql');
+    const triggerFix = readSrc('supabase/migrations/20260326010000_alert_trigger_update.sql');
     expect(triggerFix).toContain('AFTER INSERT OR UPDATE ON symptom_reports');
   });
 
   it('study_invites table defined in migrations', () => {
-    const migration = readSrc('supabase/migrations/20260326b_study_invites.sql');
+    const migration = readSrc('supabase/migrations/20260326020000_study_invites.sql');
     expect(migration).toContain('CREATE TABLE');
     expect(migration).toContain('study_invites');
     expect(migration).toContain('invite_token');
@@ -138,7 +138,7 @@ describe('Schema Alignment — Frontend ↔ DB', () => {
   });
 
   it('notification_preferences table defined in migrations', () => {
-    const migration = readSrc('supabase/migrations/20260326c_notification_preferences.sql');
+    const migration = readSrc('supabase/migrations/20260326030000_notification_preferences.sql');
     expect(migration).toContain('notification_preferences');
     expect(migration).toContain('enabled');
     expect(migration).toContain('hour');
@@ -146,7 +146,7 @@ describe('Schema Alignment — Frontend ↔ DB', () => {
   });
 
   it('audit_trail fixes: INSERT policy + report audit trigger on UPDATE', () => {
-    const migration = readSrc('supabase/migrations/20260326d_audit_trail_fixes.sql');
+    const migration = readSrc('supabase/migrations/20260326040000_audit_trail_fixes.sql');
     expect(migration).toContain('all_roles_insert_audit');
     expect(migration).toContain('AFTER INSERT OR UPDATE ON symptom_reports');
   });
