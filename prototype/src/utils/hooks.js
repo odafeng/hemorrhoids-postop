@@ -73,6 +73,9 @@ export function useDashboardData(isDemo, userInfo) {
       }
       const surgeryDate = patient.surgery_date;
       const pod = sb.getPODFromDate(surgeryDate);
+      // Signed offset: negative while the patient is enrolled but not yet
+      // operated on. `pod` alone cannot express that (it clamps at 0).
+      const daysFromSurgery = sb.getDaysFromSurgery(surgeryDate);
 
       // Parallel fetch: all independent queries at once
       const [allReports, todayReport, serverAlerts, survey, pendingNotifs] = await Promise.all([
@@ -87,7 +90,7 @@ export function useDashboardData(isDemo, userInfo) {
       const adherence = calcAdherence(allReports.length, pod);
       const surveyDone = !!survey;
 
-      return { pod, surgeryDate, todayReport, allReports, alerts, adherence, surveyDone, pendingNotifs };
+      return { pod, daysFromSurgery, surgeryDate, todayReport, allReports, alerts, adherence, surveyDone, pendingNotifs };
     },
     staleTime: 30_000, // Cache for 30 seconds
     retry: 2,

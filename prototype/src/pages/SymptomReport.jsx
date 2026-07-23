@@ -46,14 +46,22 @@ export default function SymptomReport({ onComplete, isDemo, userInfo }) {
   const isEditingPast = !!editDate && editDate !== today;
 
   const targetDate = editDate || today;
-  const calcPodForDate = (date) => {
+  // Signed offset — negative means the date precedes surgery.
+  const daysFromSurgeryFor = (date) => {
     if (!userInfo?.surgeryDate || !date) return 0;
     const s = new Date(userInfo.surgeryDate);
     const t = new Date(date);
     s.setHours(0, 0, 0, 0); t.setHours(0, 0, 0, 0);
-    return Math.max(0, Math.floor((t - s) / (1000 * 60 * 60 * 24)));
+    return Math.floor((t - s) / (1000 * 60 * 60 * 24));
   };
-  const targetPod = calcPodForDate(targetDate);
+  const targetOffset = daysFromSurgeryFor(targetDate);
+  const targetPod = Math.max(0, targetOffset);
+  // A report dated before surgery would be stored as pod = 0 (the clamp) while
+  // carrying a pre-operative report_date. Reports upsert on
+  // (study_id, report_date), so the genuine POD 0 the next day lands in a
+  // SECOND row — two POD 0 observations, one of them taken before the
+  // operation, indistinguishable afterwards. Block it at the source.
+  const isPreOp = targetOffset < 0;
 
   const demoExisting = isDemo
     ? (editDate ? getLocalReportByDate(editDate) : getTodayReport())
@@ -118,6 +126,13 @@ export default function SymptomReport({ onComplete, isDemo, userInfo }) {
 
   const handleSubmit = async () => {
     if (!isValid || submitting) return;
+    // Second line of defence. The pre-op screen already prevents reaching this
+    // form, but a stale tab left open across the surgery date, or a direct
+    // ?date= link, would otherwise still write a pre-operative row.
+    if (isPreOp) {
+      setError(`手術日為 ${userInfo?.surgeryDate}，症狀回報從手術當天才開始。`);
+      return;
+    }
     setSubmitting(true);
     setError('');
 
@@ -161,6 +176,28 @@ export default function SymptomReport({ onComplete, isDemo, userInfo }) {
     return (
       <div className="page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
         <p style={{ color: 'var(--ink-2)', animation: 'pulse 1s infinite', fontFamily: 'var(--font-mono)' }}>載入中…</p>
+      </div>
+    );
+  }
+
+  if (isPreOp) {
+    return (
+      <div className="page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div style={{ textAlign: 'center', maxWidth: 320 }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: '50%',
+            background: 'var(--accent-soft)', color: 'var(--accent)',
+            display: 'grid', placeItems: 'center', margin: '0 auto var(--space-md)',
+          }}>
+            <I.Info width={24} height={24} />
+          </div>
+          <h2 className="page-title" style={{ fontSize: 18, marginBottom: 4 }}>手術尚未進行</h2>
+          <p style={{ color: 'var(--ink-2)', fontSize: 12.5, marginBottom: 'var(--space-md)', lineHeight: 1.6 }}>
+            您的手術日為 <strong>{userInfo?.surgeryDate}</strong>。<br />
+            症狀回報從手術當天開始，在此之前無需填寫。
+          </p>
+          <button className="btn btn-secondary" onClick={onComplete}>返回首頁</button>
+        </div>
       </div>
     );
   }

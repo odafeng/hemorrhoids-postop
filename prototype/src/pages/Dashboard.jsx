@@ -85,7 +85,11 @@ export default function Dashboard({ onNavigate, isDemo, userInfo, onLogout, onSy
     );
   }
 
-  const { pod, surgeryDate, todayReport, allReports, alerts, adherence, surveyDone, pendingNotifs } = data;
+  const { pod, daysFromSurgery, surgeryDate, todayReport, allReports, alerts, adherence, surveyDone, pendingNotifs } = data;
+  // Enrolled before the operation. `pod` clamps at 0, so without this the
+  // dashboard announces 手術當日 to someone whose surgery is still days away.
+  const preOp = (daysFromSurgery ?? 0) < 0;
+  const daysUntilSurgery = preOp ? -daysFromSurgery : 0;
   const latestPain = allReports.length > 0 ? (allReports[0]?.pain_nrs ?? allReports[0]?.pain ?? null) : null;
   const todayPain = todayReport?.pain_nrs ?? todayReport?.pain ?? null;
   const todayBleeding = todayReport?.bleeding;
@@ -117,8 +121,10 @@ export default function Dashboard({ onNavigate, isDemo, userInfo, onLogout, onSy
       <div className="pod-hero">
         <div className="pod-hero-row">
           <div>
-            <div className="eyebrow" style={{ marginBottom: 6 }}>術後天數 · POST-OP DAY</div>
-            <div className="pod-number">{pod === 0 ? 'OP' : pod}</div>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>
+              {preOp ? '手術倒數 · PRE-OP' : '術後天數 · POST-OP DAY'}
+            </div>
+            <div className="pod-number">{preOp ? `-${daysUntilSurgery}` : pod === 0 ? 'OP' : pod}</div>
           </div>
           <div className="pod-meta">
             <div className="pod-meta-lbl">Surgery Date</div>
@@ -126,20 +132,26 @@ export default function Dashboard({ onNavigate, isDemo, userInfo, onLogout, onSy
             <div style={{ marginTop: 10 }}>
               <span className="pod-phase-tag">
                 <I.Sparkle width={11} height={11} />
-                {PHASE(pod)}
+                {preOp ? '手術前' : PHASE(pod)}
               </span>
             </div>
           </div>
         </div>
-        <div className="pod-ruler">
-          {Array.from({ length: 14 }).map((_, i) => {
-            const cls = i < pod ? 'filled' : i === pod ? 'today' : '';
-            return <span key={i} className={cls} />;
-          })}
-        </div>
+        {!preOp && (
+          <div className="pod-ruler">
+            {Array.from({ length: 14 }).map((_, i) => {
+              const cls = i < pod ? 'filled' : i === pod ? 'today' : '';
+              return <span key={i} className={cls} />;
+            })}
+          </div>
+        )}
         <div className="pod-caption">
           <I.Info width={14} height={14} />
-          <span>每日回報幫助醫療團隊掌握您的恢復狀況</span>
+          <span>
+            {preOp
+              ? `您的手術日為 ${surgeryDate}，${daysUntilSurgery} 天後開始每日回報。在此之前無需填寫。`
+              : '每日回報幫助醫療團隊掌握您的恢復狀況'}
+          </span>
         </div>
       </div>
 

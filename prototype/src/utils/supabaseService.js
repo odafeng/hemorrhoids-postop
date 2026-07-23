@@ -256,15 +256,25 @@ async function callResearcherManage(body) {
  * 26^6 ≈ 308M combinations — collision risk is negligible for this study size.
  */
 function generateInviteToken() {
-  // Alphabet excludes O/0, I/1 and L: these codes get printed on paper and read
-  // aloud at enrolment, and a misread character costs a failed registration.
+  // 6 letters — short enough to read aloud and type at the bedside.
+  //
+  // O, I and L are excluded: these codes are printed and dictated, and a
+  // misread character costs a failed registration. That leaves 23^6 ≈ 148M
+  // combinations, which is ample here because a token is not a standalone
+  // secret — it is bound to one study_id, expires, and is single-use, so
+  // guessing one also requires guessing the study_id it belongs to.
+  //
   // Must stay within normalizeInviteCode()'s A-Z0-9 set so a stored token
-  // always equals the normalised form of what the patient types.
-  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  const bytes = new Uint32Array(12);
+  // always equals the normalised form of whatever the patient types.
+  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ';
+  const bytes = new Uint32Array(6);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
 }
+
+// Exposed for tests only — the format contract (length, alphabet, and agreement
+// with normalizeInviteCode) is what keeps printed codes usable.
+export const __test_generateInviteToken = generateInviteToken;
 
 /**
  * Create a new study invite.
@@ -464,6 +474,26 @@ export async function ensurePatient(studyId, inviteToken) {
     throw err;
   }
   return result.patient;
+}
+
+/**
+ * Signed day offset from the surgery date. NEGATIVE before surgery.
+ *
+ * getPODFromDate() clamps to 0, which is right for a POD label but hides the
+ * pre-operative case entirely: a patient enrolled the day before surgery saw
+ * "手術當日 · POD 0" and, if they filled the form that evening, produced a
+ * report dated the day BEFORE surgery yet stored as pod = 0. Reports upsert on
+ * (study_id, report_date), so the real POD 0 the next day became a second row —
+ * two POD 0 observations, one of them pre-operative, and nothing in the data to
+ * tell them apart afterwards.
+ */
+export function getDaysFromSurgery(surgeryDate) {
+  if (!surgeryDate) return 0;
+  const surgery = new Date(surgeryDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  surgery.setHours(0, 0, 0, 0);
+  return Math.floor((today - surgery) / (1000 * 60 * 60 * 24));
 }
 
 export function getPODFromDate(surgeryDate) {

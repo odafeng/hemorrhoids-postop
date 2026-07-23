@@ -19,6 +19,9 @@ vi.mock('../storage', () => ({
 vi.mock('../supabaseService', () => ({
   getPatient: vi.fn().mockResolvedValue({ study_id: 'HEM-001', surgery_date: '2026-03-13' }),
   getPODFromDate: vi.fn().mockReturnValue(5),
+  // Signed offset — the dashboard needs it to tell "POD 0" apart from
+  // "operating in three days".
+  getDaysFromSurgery: vi.fn().mockReturnValue(5),
   getAllReports: vi.fn().mockResolvedValue([
     { report_date: '2026-03-16', pod: 2, pain_nrs: 3, bleeding: '無', bowel: '正常', fever: false, wound: '無異常', urinary: '正常', continence: '正常' },
   ]),
