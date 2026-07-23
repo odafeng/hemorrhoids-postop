@@ -32,3 +32,9 @@ backup_before_cleanup_*/
 .playwright-mcp/
 *.webp
 login-prod.png
+
+# 收案個資 — 絕不進版本控制（repo 為 public）
+# 對照表含姓名與病歷號；同意書含簽名。兩者都是 IRB 個資文件。
+收案文件/收案對照表*.xlsx
+收案文件/*同意書*.pdf
+收案文件/*受試者*.pdf
