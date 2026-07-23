@@ -242,10 +242,14 @@ async function callResearcherManage(body) {
  * 26^6 ≈ 308M combinations — collision risk is negligible for this study size.
  */
 function generateInviteToken() {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  const bytes = new Uint8Array(6);
+  // Alphabet excludes O/0, I/1 and L: these codes get printed on paper and read
+  // aloud at enrolment, and a misread character costs a failed registration.
+  // Must stay within normalizeInviteCode()'s A-Z0-9 set so a stored token
+  // always equals the normalised form of what the patient types.
+  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const bytes = new Uint32Array(12);
   crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => alphabet[b % 26]).join('');
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
 }
 
 /**

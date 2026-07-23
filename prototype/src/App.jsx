@@ -145,7 +145,7 @@ export default function App() {
     window.addEventListener('online', handleOnline);
     handleOnline(); // also flush on mount
     return () => window.removeEventListener('online', handleOnline);
-  }, [authState, isDemo]);
+  }, [authState, isDemo, userInfo?.studyId]);
 
   const isResearcherRole = userInfo?.role === 'researcher' || userInfo?.role === 'pi';
   const tabs = isResearcherRole ? researcherTabs : patientTabs;

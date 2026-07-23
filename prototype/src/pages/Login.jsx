@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { signIn, signUp, resetPassword, checkStudyIdExists } from '../utils/supabaseService';
+import { normalizeInviteCode } from '../utils/inviteCode';
 import * as I from '../components/Icons';
 
 const SAVED_EMAIL_KEY = 'saved_login_email';
@@ -76,7 +77,8 @@ export default function Login({ onLogin, theme, onToggleTheme }) {
         await resetPassword(email.trim());
         setResetSent(true);
       } else if (mode === 'register') {
-        if (!inviteCode.trim()) throw new Error('請輸入邀請碼。');
+        const normalizedInvite = normalizeInviteCode(inviteCode);
+        if (!normalizedInvite) throw new Error('請輸入邀請碼。');
         if (!surgeonPrefix) throw new Error('請選擇主刀醫師。');
         if (!patientNumber.trim() || !/^\d{1,4}$/.test(patientNumber.trim())) {
           throw new Error('請輸入病人編號（1-4 位數字）。');
@@ -84,7 +86,7 @@ export default function Login({ onLogin, theme, onToggleTheme }) {
         const studyId = `${surgeonPrefix}-${patientNumber.trim().padStart(3, '0')}`;
         const exists = await checkStudyIdExists(studyId);
         if (exists) throw new Error(`研究編號 ${studyId} 已存在，請使用其他編號。`);
-        sessionStorage.setItem('invite_token', inviteCode.trim());
+        sessionStorage.setItem('invite_token', normalizedInvite);
         await signUp(email, password, {
           role: 'patient',
           study_id: studyId,
@@ -180,7 +182,12 @@ export default function Login({ onLogin, theme, onToggleTheme }) {
             <div className="input-group">
               <label className="input-lbl">邀請碼 · Invite Code</label>
               <input className="input" placeholder="請輸入研究團隊提供的邀請碼"
-                value={inviteCode} onChange={e => setInviteCode(e.target.value)} required />
+                value={inviteCode} onChange={e => setInviteCode(e.target.value)}
+                autoCapitalize="characters" autoCorrect="off" autoComplete="off"
+                spellCheck={false} required />
+              <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em' }}>
+                大小寫、連字號皆可，系統會自動校正
+              </div>
             </div>
             <div className="input-group">
               <label className="input-lbl">手術日期</label>

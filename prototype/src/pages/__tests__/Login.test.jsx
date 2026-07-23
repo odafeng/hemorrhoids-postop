@@ -147,6 +147,43 @@ describe('Login Page', () => {
     alertSpy.mockRestore();
   });
 
+  // Codes are printed on paper and read aloud; phone keyboards mangle the case
+  // and patients type the separators they see. Server-side validation is an
+  // exact match, so anything not normalised here reads as "wrong code".
+  it.each([
+    ['  3978-K9KU-TUDM  ', '3978K9KUTUDM'],
+    ['3978k9kutudm', '3978K9KUTUDM'],
+    ['3978 K9KU TUDM', '3978K9KUTUDM'],
+    ['3978—K9KU—TUDM', '3978K9KUTUDM'], // em-dash from a copy/paste
+  ])('normalizes invite code %j before storing it', async (typed, expected) => {
+    mockSignUp.mockResolvedValue({});
+    render(<Login onLogin={vi.fn()} />);
+    fireEvent.click(getTab('註冊'));
+    fireEvent.change(screen.getByPlaceholderText('請輸入研究團隊提供的邀請碼'), { target: { value: typed } });
+    fireEvent.change(screen.getByDisplayValue('請選擇主刀醫師'), { target: { value: 'HSF' } });
+    fireEvent.change(screen.getByPlaceholderText('001'), { target: { value: '1' } });
+    fireEvent.change(screen.getByPlaceholderText('your@email.com'), { target: { value: 'new@test.com' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'pass123' } });
+    fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-03-15' } });
+    fireEvent.submit(document.querySelector('button[type="submit"]'));
+    await waitFor(() => expect(mockSignUp).toHaveBeenCalled());
+    expect(sessionStorage.getItem('invite_token')).toBe(expected);
+  });
+
+  it('rejects an invite code that is only punctuation', async () => {
+    render(<Login onLogin={vi.fn()} />);
+    fireEvent.click(getTab('註冊'));
+    fireEvent.change(screen.getByPlaceholderText('請輸入研究團隊提供的邀請碼'), { target: { value: '---' } });
+    fireEvent.change(screen.getByDisplayValue('請選擇主刀醫師'), { target: { value: 'HSF' } });
+    fireEvent.change(screen.getByPlaceholderText('001'), { target: { value: '1' } });
+    fireEvent.change(screen.getByPlaceholderText('your@email.com'), { target: { value: 'new@test.com' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'pass123' } });
+    fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-03-15' } });
+    fireEvent.submit(document.querySelector('button[type="submit"]'));
+    await waitFor(() => expect(screen.getByText('請輸入邀請碼。')).toBeInTheDocument());
+    expect(mockSignUp).not.toHaveBeenCalled();
+  });
+
   it('stashes the invite token for the onboarding step', async () => {
     mockSignUp.mockResolvedValue({});
     render(<Login onLogin={vi.fn()} />);
