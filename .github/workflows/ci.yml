@@ -25,6 +25,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The workflow has always been named "Lint, Build & Test" but never linted.
+      - name: Lint
+        run: npm run lint
+
       - name: Run unit tests
         run: npx vitest run
 
@@ -60,9 +64,13 @@ jobs:
           cache: npm
           cache-dependency-path: prototype/package-lock.json
 
+      # Pinned deliberately. `version: latest` meant a CLI release could break CI
+      # with no code change on our side — which is exactly what happened on
+      # 2026-07-23 when the auto-expose-new-tables default flipped and seeding
+      # died on "permission denied for table patients". Bump this on purpose.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.109.1
 
       - name: Install dependencies
         run: npm ci
@@ -104,3 +112,110 @@ jobs:
           name: e2e-screenshots
           path: prototype/test-results/
           retention-days: 7
+
+  # ─────────────────────────────────────────────────────────────
+  # Deploy Supabase Edge Functions + migrations on push to main.
+  #
+  # This existed only in prototype/.github/workflows/ci.yml, which GitHub never
+  # ran: workflows are only read from .github/workflows/ at the REPOSITORY root.
+  # So every Edge Function change since that file was written had to be deployed
+  # by hand, with nothing to warn you when it wasn't — the frontend would ship
+  # via Vercel while the backend silently stayed on the old version.
+  # ─────────────────────────────────────────────────────────────
+  deploy-supabase:
+    name: Deploy Supabase (functions + migrations)
+    runs-on: ubuntu-latest
+    needs: [test, e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    defaults:
+      run:
+        working-directory: prototype
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: prototype/package-lock.json
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Regenerates supabase/functions/ai-chat/_prompt.ts from the single source
+      # of truth (shared/system-prompt.json) before the function is uploaded.
+      - name: Sync AI system prompt
+        run: npm run sync-prompt
+
+      - name: Fail if sync-prompt left uncommitted changes
+        run: |
+          if ! git diff --quiet; then
+            echo "::error::supabase/functions/ai-chat/_prompt.ts is out of date."
+            echo "Run 'npm run sync-prompt' and commit the result."
+            git --no-pager diff --stat
+            exit 1
+          fi
+
+      # NOTE: migrations are deliberately NOT applied here.
+      #
+      # supabase_migrations.schema_migrations on production records 8-digit
+      # versions (20260318, 20260319, …) while supabase/migrations/ on disk uses
+      # 14-digit ones (20260318000000, …), so the CLI considers all 31 local
+      # migrations unapplied. `supabase db push` would replay them from
+      # 00000000000000_base_schema.sql — CREATE TABLE against tables that already
+      # hold live study data. Repair the history with `supabase migration repair
+      # --status applied <version>` (metadata only, no schema change) before
+      # enabling this, and not during an enrolment window.
+      #
+      # Until then: apply new migrations by hand via the SQL editor, as was
+      # already the practice.
+
+      # verify_jwt is per-function and must match what is already deployed —
+      # blanket --no-verify-jwt would downgrade patient-onboard, which relies on
+      # the gateway check on top of its own getUser() verification.
+      - name: Deploy Edge Functions
+        run: |
+          set -euo pipefail
+          # Gateway-verified JWT (function ALSO verifies internally)
+          supabase functions deploy patient-onboard --project-ref "$PROJECT_REF"
+          # Self-authenticating: each validates the caller itself, or is public
+          for fn in ai-chat check-adherence health admin-reset-password \
+                    researcher-invite researcher-manage send-test-push; do
+            supabase functions deploy "$fn" --project-ref "$PROJECT_REF" --no-verify-jwt
+          done
+
+      - name: Smoke test — health endpoint reports healthy
+        run: |
+          set -euo pipefail
+          body=$(curl -fsS --retry 5 --retry-delay 3 \
+            "https://${PROJECT_REF}.supabase.co/functions/v1/health")
+          echo "$body"
+          echo "$body" | grep -q '"status":"healthy"'
+          echo "$body" | grep -q '"database":"ok"'
+
+      - name: Smoke test — study views are not readable anonymously
+        env:
+          ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          # Regression guard for the 2026-07-23 leak: these views run as their
+          # owner, so without security_invoker + a REVOKE they hand the whole
+          # study dataset to anyone holding the public anon key.
+          for view in v_adherence_summary v_symptom_timeline; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              "https://${PROJECT_REF}.supabase.co/rest/v1/${view}?select=*&limit=1" \
+              -H "apikey: ${ANON_KEY}")
+            echo "${view} -> HTTP ${code}"
+            if [ "$code" != "401" ] && [ "$code" != "403" ]; then
+              echo "::error::${view} is readable with the public anon key (HTTP ${code})"
+              exit 1
+            fi
+          done
