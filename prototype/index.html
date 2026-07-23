@@ -32,6 +32,16 @@
       // Apply saved theme before React hydrates to prevent flash
       const t = localStorage.getItem('theme');
       if (t) document.documentElement.setAttribute('data-theme', t);
+
+      // Record that this load came from a password-recovery link, BEFORE any
+      // module runs. supabase-js consumes and clears the URL hash the moment
+      // the client is constructed — which happens at import time, i.e. before
+      // useAuth can attach its onAuthStateChange listener — so the
+      // PASSWORD_RECOVERY event can be missed entirely. Losing it means the
+      // user is silently logged in with their password unchanged, which reads
+      // as "the reset link does nothing".
+      window.__PASSWORD_RECOVERY__ =
+        /[#&]type=recovery(&|$)/.test(window.location.hash);
     </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>

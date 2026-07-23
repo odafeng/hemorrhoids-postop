@@ -15,6 +15,7 @@ import IOSInstallPrompt from './components/IOSInstallPrompt';
 import UpdateBanner from './components/UpdateBanner';
 import PageErrorBoundary from './components/PageErrorBoundary';
 import ConsentPage from './pages/ConsentPage';
+import SetNewPassword from './pages/SetNewPassword';
 import SurgicalRecord from './pages/SurgicalRecord';
 import * as I from './components/Icons';
 import { installGlobalErrorHandlers, initSentry, logError } from './utils/errorLogger';
@@ -46,6 +47,7 @@ export default function App() {
   const queryClient = useQueryClient();
   const {
     authState, isDemo, userInfo, loadingTooLong, onboardError,
+    passwordRecovery, completePasswordRecovery,
     handleLogin, handleLogout, syncSurgeryDate,
     setAuthState, setUserInfo,
   } = useAuth();
@@ -230,6 +232,21 @@ export default function App() {
         onLogin={(info) => handleLogin(info, navigate)}
         theme={theme}
         onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+      />
+    );
+  }
+
+  // Password-recovery gate — must come BEFORE the consent gate. A recovery link
+  // only establishes a session; the password is unchanged until the user sets a
+  // new one. Gating this behind consent would leave a patient who forgot their
+  // password stuck on a consent form they may have already signed, with no way
+  // to reach the field that actually fixes their account.
+  if (passwordRecovery && authState === 'loggedIn' && !isDemo) {
+    return (
+      <SetNewPassword
+        email={userInfo?.email}
+        onDone={completePasswordRecovery}
+        onCancel={() => handleLogout(navigate)}
       />
     );
   }

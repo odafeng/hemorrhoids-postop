@@ -6,7 +6,7 @@
 // no patients row, no app_metadata claims, every RLS check denied) and only a
 // manual DB fix can recover it. These tests pin that hand-off.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook, waitFor, act } from '@testing-library/react';
 
 const mocks = vi.hoisted(() => ({
   ensurePatient: vi.fn(),
@@ -104,6 +104,85 @@ describe('useAuth — invite token hand-off', () => {
     await waitFor(() => expect(sessionStorage.getItem('invite_token')).toBeNull());
     await waitFor(() => expect(result.current.userInfo?.studyId).toBe('HSF-001'));
     expect(result.current.onboardError).toBeNull();
+  });
+});
+
+describe('useAuth — password recovery detection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionStorage.clear();
+    delete window.__PASSWORD_RECOVERY__;
+    mocks.getSession.mockResolvedValue(onboardedSession);
+    mocks.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } });
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete window.__PASSWORD_RECOVERY__;
+  });
+
+  it('is off for an ordinary login', async () => {
+    const { useAuth } = await import('../useAuth');
+    const { result } = renderHook(() => useAuth());
+    await waitFor(() => expect(result.current.authState).toBe('loggedIn'));
+    expect(result.current.passwordRecovery).toBe(false);
+  });
+
+  // supabase-js consumes the URL hash when the client is constructed — at
+  // import time, before this hook can attach a listener — so the
+  // PASSWORD_RECOVERY event can be gone before anyone is listening. index.html
+  // records the flag first; missing it is what made the reset link look inert.
+  it('picks up the flag index.html captured before any module ran', async () => {
+    window.__PASSWORD_RECOVERY__ = true;
+    const { useAuth } = await import('../useAuth');
+    const { result } = renderHook(() => useAuth());
+    expect(result.current.passwordRecovery).toBe(true);
+  });
+
+  it('also reacts to a live PASSWORD_RECOVERY event', async () => {
+    let emit;
+    mocks.onAuthStateChange.mockImplementation((cb) => {
+      emit = cb;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+
+    const { useAuth } = await import('../useAuth');
+    const { result } = renderHook(() => useAuth());
+    await waitFor(() => expect(emit).toBeTypeOf('function'));
+    expect(result.current.passwordRecovery).toBe(false);
+
+    await act(async () => { await emit('PASSWORD_RECOVERY', onboardedSession); });
+    expect(result.current.passwordRecovery).toBe(true);
+  });
+
+  it('clears the flag once the new password is saved', async () => {
+    window.__PASSWORD_RECOVERY__ = true;
+    const { useAuth } = await import('../useAuth');
+    const { result } = renderHook(() => useAuth());
+    expect(result.current.passwordRecovery).toBe(true);
+
+    act(() => result.current.completePasswordRecovery());
+
+    expect(result.current.passwordRecovery).toBe(false);
+    // Also cleared on window, or a later re-mount would re-open the screen.
+    expect(window.__PASSWORD_RECOVERY__).toBe(false);
+  });
+
+  it('clears the flag on sign-out so it cannot leak to the next account', async () => {
+    window.__PASSWORD_RECOVERY__ = true;
+    let emit;
+    mocks.onAuthStateChange.mockImplementation((cb) => {
+      emit = cb;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+
+    const { useAuth } = await import('../useAuth');
+    const { result } = renderHook(() => useAuth());
+    await waitFor(() => expect(emit).toBeTypeOf('function'));
+
+    await act(async () => { await emit('SIGNED_OUT', null); });
+    expect(result.current.passwordRecovery).toBe(false);
   });
 });
 

@@ -11,6 +11,14 @@ export function useAuth() {
   const [userInfo, setUserInfo] = useState(null);
   const [loadingTooLong, setLoadingTooLong] = useState(false);
   const [onboardError, setOnboardError] = useState(null);
+  // Set when the session came from a password-recovery link. Supabase signs the
+  // user in but does NOT change the password, so the app must ask for a new one
+  // — otherwise "忘記密碼" silently does nothing but log you in.
+  // Seeded from the flag index.html captures before any module runs, because
+  // supabase-js may consume the URL hash before our listener is attached.
+  const [passwordRecovery, setPasswordRecovery] = useState(
+    () => typeof window !== 'undefined' && window.__PASSWORD_RECOVERY__ === true,
+  );
 
   const loadUserInfo = async (session, { attemptedSelfHeal = false } = {}) => {
     const user = session?.user;
@@ -137,7 +145,12 @@ export function useAuth() {
     };
     checkAuth();
 
-    const { data: { subscription } } = onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = onAuthStateChange(async (event, session) => {
+      // Fired when the user opens a recovery link. supabase-js consumes the
+      // token from the URL hash and establishes a session — the password itself
+      // is unchanged until updateUser({password}) is called, so flag it and let
+      // App render the set-new-password screen instead of the dashboard.
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
       if (session) {
         await loadUserInfo(session);
         setAuthState('loggedIn');
@@ -145,6 +158,7 @@ export function useAuth() {
         setAuthState('loggedOut');
         setUserInfo(null);
         setIsDemo(false);
+        setPasswordRecovery(false);
       }
     });
 
@@ -208,8 +222,14 @@ export function useAuth() {
     }
   };
 
+  const completePasswordRecovery = () => {
+    setPasswordRecovery(false);
+    if (typeof window !== 'undefined') window.__PASSWORD_RECOVERY__ = false;
+  };
+
   return {
     authState, isDemo, userInfo, loadingTooLong, onboardError,
+    passwordRecovery, completePasswordRecovery,
     handleLogin, handleLogout, syncSurgeryDate,
     setAuthState, setUserInfo,
   };

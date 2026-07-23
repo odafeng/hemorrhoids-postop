@@ -46,6 +46,20 @@ export async function resetPassword(email) {
   if (error) throw error;
 }
 
+/**
+ * Set a new password for the currently authenticated user.
+ *
+ * The recovery link only establishes a session — it does NOT change the
+ * password. Without this call the user lands back in the app still holding the
+ * old (or, after an admin rotation, an unknown) password, which is exactly what
+ * "the reset link just takes me to the app" looks like.
+ */
+export async function updatePassword(newPassword) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+}
+
 export function onAuthStateChange(callback) {
   if (!supabase) return { data: { subscription: { unsubscribe: () => {} } } };
   return supabase.auth.onAuthStateChange(callback);
