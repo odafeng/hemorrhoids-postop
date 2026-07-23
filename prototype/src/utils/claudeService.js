@@ -4,6 +4,7 @@
 
 import { getAIResponse as getMockResponse } from './mockAI';
 import { logError } from './errorLogger';
+import { stripMarkdown } from './stripMarkdown';
 
 function getAIChatUrl() {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -90,7 +91,9 @@ export async function getClaudeResponse(question, options = {}, onChunk = null) 
             const event = JSON.parse(line.slice(6));
             if (event.type === 'delta' && event.text) {
               fullText += event.text;
-              onChunk(fullText);
+              // Strip as it streams — the patient must never see raw Markdown,
+              // not even for the moment before a bold span closes.
+              onChunk(stripMarkdown(fullText, { streaming: true }));
             }
             if (event.type === 'done' && event.sources) {
               ragSources = event.sources;
@@ -99,12 +102,16 @@ export async function getClaudeResponse(question, options = {}, onChunk = null) 
         }
       }
 
-      return { text: fullText || '抱歉，目前無法回覆，請稍後再試。', source: 'claude', ragSources };
+      return {
+        text: stripMarkdown(fullText) || '抱歉，目前無法回覆，請稍後再試。',
+        source: 'claude',
+        ragSources,
+      };
     }
 
     // Fallback: non-streaming JSON response
     const data = await res.json();
-    return { text: data.response, source: 'claude' };
+    return { text: stripMarkdown(data.response), source: 'claude' };
   } catch (err) {
     const isTimeout = err?.name === 'AbortError';
     console.error('Claude service error:', isTimeout ? 'timeout' : err);
