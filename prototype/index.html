@@ -4,16 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 
-    <!-- PWA Meta -->
-    <meta name="theme-color" content="#0a1628" />
-    <meta name="background-color" content="#0a1628" />
-    <meta name="color-scheme" content="dark" />
+    <!-- PWA Meta — must track the app's default theme (light, see App.jsx),
+         otherwise the splash/status bar flashes dark navy before a white app. -->
+    <meta name="theme-color" content="#f8fafd" />
+    <meta name="color-scheme" content="light dark" />
 
     <!-- Apple PWA -->
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="高榮術後追蹤" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.svg" />
+    <!-- PNG, not SVG: iOS Safari cannot decode an SVG apple-touch-icon and
+         silently falls back to a screenshot of the page as the home-screen
+         icon. Home-screen install is a prerequisite for iOS Web Push here. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 
     <!-- Icons & Manifest -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -32,7 +36,12 @@
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
 
-    <!-- Service Worker Registration (with aggressive self-update) -->
+    <!-- Service Worker Registration.
+         The new worker still activates immediately (SKIP_WAITING) so the next
+         navigation is fresh, but the page is NEVER auto-reloaded: a deploy
+         during clinic hours would otherwise wipe whatever a patient had typed
+         into the symptom report. The SW posts SW_UPDATED on activate and
+         <UpdateBanner> offers a "重新載入" button instead. -->
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
@@ -54,14 +63,6 @@
               });
             })
             .catch(err => console.warn('SW registration failed:', err));
-
-          // When the active SW changes, reload once to pick up new bundle
-          let reloaded = false;
-          navigator.serviceWorker.addEventListener('controllerchange', () => {
-            if (reloaded) return;
-            reloaded = true;
-            window.location.reload();
-          });
         });
       }
     </script>

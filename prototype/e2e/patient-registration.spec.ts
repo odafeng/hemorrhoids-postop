@@ -57,9 +57,14 @@ test.describe('Patient Registration Flow', () => {
     await page.getByPlaceholder('your@email.com').fill(testEmail);
     await page.getByPlaceholder('••••••••').fill(testPassword);
 
+    // No success alert any more: Supabase runs with mailer_autoconfirm, so
+    // signUp already returns a session and the app goes straight to onboarding.
+    // Fail loudly if an unexpected dialog appears rather than letting an
+    // un-run handler make this test pass vacuously.
     page.on('dialog', async dialog => {
-      expect(dialog.message()).toContain('帳號建立成功');
+      const message = dialog.message();
       await dialog.accept();
+      throw new Error(`Unexpected dialog during registration: ${message}`);
     });
 
     await page.locator('form button[type="submit"]').click();

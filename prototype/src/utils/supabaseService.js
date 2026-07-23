@@ -3,6 +3,7 @@
 // Falls back to LocalStorage when offline or unauthenticated (demo mode)
 
 import supabase from './supabaseClient';
+import { logError } from './errorLogger';
 
 // =====================
 // Auth helpers
@@ -73,9 +74,16 @@ export async function getPatient(studyId) {
 }
 
 /**
- * Check if a study_id already exists in the patients table
- * Used during registration to prevent duplicates
- * Works with anon key — relies on RLS (researcher or patient own row)
+ * Check if a study_id already exists in the patients table.
+ *
+ * BEST-EFFORT ONLY. During patient self-registration the caller is still
+ * anonymous, so get_user_role() is 'anon' and RLS filters every row — this
+ * always reports "free" regardless of the truth. It only returns a real
+ * answer for an authenticated researcher/PI.
+ *
+ * Uniqueness is therefore enforced server-side: patient-onboard refuses with
+ * 409 when the study_id already belongs to another account. Treat a positive
+ * result here as a friendly early warning, never as the guarantee.
  */
 export async function checkStudyIdExists(studyId) {
   if (!supabase) return false;
@@ -376,43 +384,68 @@ export async function recordConsent(studyId, signatureDataUrl) {
 /**
  * Ensure patient record exists via server-side Edge Function.
  * The Edge Function uses service_role to bypass RLS safely.
+ *
+ * THROWS on failure — callers must not treat a failed onboard as "done".
+ * Swallowing the error here used to strand the patient: the caller had
+ * already dropped the one-shot invite_token, leaving an auth account with
+ * no patients row and no UI path to re-enter the code.
+ *
  * @param {string} studyId
  * @param {string} [inviteToken] - Required for new patient registration
+ * @throws {Error} with `.status` set to the HTTP status when the server replied
  */
 export async function ensurePatient(studyId, inviteToken) {
   const existing = await getPatient(studyId);
   if (existing) return existing;
 
-  try {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    if (!supabaseUrl) {
-      // Demo mode — create a fake patient
-      return { study_id: studyId, surgery_date: new Date().toLocaleDateString('en-CA') };
-    }
-
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
-
-    const res = await fetch(`${supabaseUrl}/functions/v1/patient-onboard`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-      },
-      body: JSON.stringify({ invite_token: inviteToken || null }),
-    });
-
-    const result = await res.json();
-    if (!res.ok) {
-      console.error('patient-onboard error:', result.error);
-      return null;
-    }
-    return result.patient;
-  } catch (err) {
-    console.error('ensurePatient error:', err);
-    return null;
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  if (!supabaseUrl) {
+    // Demo mode — create a fake patient
+    return { study_id: studyId, surgery_date: new Date().toLocaleDateString('en-CA') };
   }
+
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/patient-onboard`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ invite_token: inviteToken || null }),
+  });
+
+  let result = {};
+  try {
+    result = await res.json();
+  } catch {
+    // Non-JSON body (gateway error page, empty 502) — fall through to the
+    // checks below rather than masking the failure.
+    result = {};
+  }
+
+  if (!res.ok) {
+    console.error('patient-onboard error:', res.status, result.error);
+    const err = new Error(result.error || `patient-onboard failed (HTTP ${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+
+  // A 2xx does not prove we reached the Edge Function. A hospital captive
+  // portal or corporate proxy answers *every* request with 200 + an HTML login
+  // page, which parses to {} here. Returning undefined would look like success
+  // to the caller, which would then burn the one-shot invite token for a
+  // patient record that was never created. Enrolment happens on hospital
+  // Wi-Fi, so this is the likely failure, not a theoretical one.
+  if (!result?.patient) {
+    console.error('patient-onboard returned no patient:', res.status);
+    const err = new Error(`帳號設定失敗：伺服器回應異常 (HTTP ${res.status})，請確認網路連線後重試。`);
+    err.status = res.status;
+    throw err;
+  }
+  return result.patient;
 }
 
 export function getPODFromDate(surgeryDate) {
@@ -490,7 +523,14 @@ export async function getAlerts(studyId) {
     .select('*')
     .eq('study_id', studyId)
     .order('triggered_at', { ascending: false });
-  if (error) return [];
+  // A read failure must not render as "no alerts" — on screen the two are
+  // indistinguishable, and this is the study's safety net (persistent bleeding,
+  // fever, clots). Throw so the caller shows an error instead of an all-clear.
+  if (error) {
+    console.error('[getAlerts]', error.message);
+    logError(error, { context: 'getAlerts', studyId });
+    throw error;
+  }
   return data || [];
 }
 
@@ -594,8 +634,12 @@ export async function getAllReportsForResearcher() {
       .range(from, from + PAGE_SIZE - 1);
 
     if (error) {
+      // Returning the partial set produced a CSV that looked complete but was
+      // silently truncated — it would be analysed and filed with the IRB as the
+      // full dataset. Fail instead; handleExportCSV already surfaces a throw.
       console.error('[getAllReportsForResearcher]', error.message);
-      return allData; // return what we have so far
+      logError(error, { context: 'getAllReportsForResearcher', rowsFetched: allData.length, from });
+      throw new Error(`資料讀取失敗（已取得 ${allData.length} 筆，資料不完整，請重試）：${error.message}`);
     }
 
     allData = allData.concat(data || []);
@@ -611,7 +655,13 @@ export async function getAllAlertsForResearcher() {
     .from('alerts')
     .select('*')
     .order('triggered_at', { ascending: false });
-  if (error) return [];
+  // See getAlerts: "0 active alerts" and "the alert query failed" must never
+  // look the same on the PI overview.
+  if (error) {
+    console.error('[getAllAlertsForResearcher]', error.message);
+    logError(error, { context: 'getAllAlertsForResearcher' });
+    throw error;
+  }
   return data || [];
 }
 

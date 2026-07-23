@@ -89,6 +89,12 @@ Light mode 為 CSS variable override (`[data-theme="light"]`)。部分 component
 
 PWA 為 network-first 策略。離線時：
 - 可瀏覽已快取的頁面
-- 無法提交症狀回報（需網路）
-- 無法使用 AI 衛教
-- 離線 queue + 上線自動 sync 尚未實作
+- 無法使用 AI 衛教（需即時呼叫 Edge Function）
+- 症狀回報**會存入離線 queue**（`src/utils/offlineQueue.js`，localStorage），
+  `OfflineBanner` 顯示待送出筆數，恢復連線後由 `App.jsx` 的 `flushQueue()` 自動補送
+
+## PWA 更新行為
+
+新版部署後，Service Worker 會立即 activate，但**不會自動 reload 頁面** —
+避免病人填到一半的症狀回報被清空。改由 `UpdateBanner` 顯示「系統已更新／重新載入」，
+由使用者自行決定何時套用。代價是使用者在按下重新載入前，仍執行舊版 bundle。

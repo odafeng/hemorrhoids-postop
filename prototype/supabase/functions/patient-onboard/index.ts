@@ -66,6 +66,35 @@ Deno.serve(async (req: Request) => {
     // Use service_role client to bypass RLS for patient insert
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Parse the body up front: the existing-patient branch below needs the
+    // invite token too. Onboarding is not atomic (patient row, app_metadata
+    // promote and invite claim are three separate writes), so a retry can
+    // legitimately arrive with a valid token AND an existing patient row.
+    let body: { invite_token?: string } = {};
+    try {
+      body = await req.json();
+    } catch {
+      // empty body is ok for backwards compat, but token will be required
+    }
+    const inviteToken = body.invite_token;
+
+    // Promote role / study_id / surgeon_id into app_metadata — the trusted
+    // claim source every RLS helper reads. supabase-js admin methods resolve
+    // with { error } instead of rejecting, so this MUST be checked: swallowing
+    // it returns 200 to a client that then burns its one-shot invite token and
+    // is left with a JWT that fails every RLS check, permanently.
+    const promoteClaims = async (surgeonId: string | null) => {
+      const { error } = await adminClient.auth.admin.updateUserById(user.id, {
+        app_metadata: { ...(user.app_metadata || {}), role, study_id: studyId, surgeon_id: surgeonId },
+      });
+      return error;
+    };
+
+    const claimsFailed = () => new Response(
+      JSON.stringify({ error: "帳號已建立但權限設定失敗，請重試或聯絡研究團隊。" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+
     // Check if patient already exists (skip token check for existing patients)
     const { data: existing } = await adminClient
       .from("patients")
@@ -94,23 +123,70 @@ Deno.serve(async (req: Request) => {
         const needsPromote = !user.app_metadata?.role
           || !user.app_metadata?.study_id
           || (existingSurgeonId && !user.app_metadata?.surgeon_id);
-        if (needsPromote) {
-          await adminClient.auth.admin.updateUserById(user.id, {
-            app_metadata: {
-              ...(user.app_metadata || {}),
-              role,
-              study_id: studyId,
-              surgeon_id: existingSurgeonId,
-            },
-          }).catch((e) => console.error("app_metadata sync error:", e));
-        }
+        if (needsPromote && await promoteClaims(existingSurgeonId)) return claimsFailed();
       } else {
-        // No proof of ownership — do NOT trust user_metadata. The existing
-        // patient row exists but this caller didn't claim the invite for
-        // it (or invite record is missing). Skip the promote; if the user
-        // legitimately owns this record but has no invite trail, PI must
-        // manually set app_metadata via the admin dashboard.
-        console.warn("[patient-onboard] existing patient without invite ownership proof; skipping app_metadata sync", { study_id: studyId, user_id: user.id });
+        // No ownership recorded yet. Two very different situations:
+        //
+        //  (a) A RETRY. Onboarding is three non-atomic writes (patient row →
+        //      claim invite → promote claims). If it died partway, the row
+        //      exists while study_invites is still unclaimed, and the client
+        //      correctly kept its invite token. Presenting a valid, unexpired,
+        //      still-unclaimed token for THIS study_id is proof of ownership —
+        //      it is the same secret the researcher handed to this patient.
+        //      Refusing here would strand exactly the patient this whole
+        //      retry path exists to rescue.
+        //
+        //  (b) A DUPLICATE study_id. The client-side uniqueness check cannot
+        //      see other patients' rows through RLS, so it always reports
+        //      "free" and a collision only surfaces here. No valid unclaimed
+        //      invite → refuse.
+        //
+        // Returning 200 + the row (the previous behaviour) was wrong for both:
+        // it leaked another patient's record to anyone who guessed a study_id,
+        // and told the client "onboarded" while app_metadata stayed unset.
+        const { data: unclaimed } = inviteToken
+          ? await adminClient
+            .from("study_invites")
+            .select("id")
+            .eq("invite_token", inviteToken)
+            .eq("study_id", studyId)
+            .is("used_by_user_id", null)
+            .gte("expires_at", new Date().toISOString())
+            .maybeSingle()
+          : { data: null };
+
+        if (!unclaimed) {
+          console.warn("[patient-onboard] existing patient, no ownership proof and no valid unclaimed invite; refusing", { study_id: studyId, user_id: user.id });
+          return new Response(
+            JSON.stringify({ error: `研究編號 ${studyId} 已被其他帳號使用，請聯絡研究團隊確認編號。` }),
+            { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
+        // Claim BEFORE promoting, so a promote failure still leaves proof of
+        // ownership behind and the next retry takes the ownedInvite path.
+        //
+        // `.is("used_by_user_id", null)` + checking a row came back makes this
+        // a compare-and-set. Unlike the new-patient path there is no UNIQUE
+        // insert serialising callers here, so without the row check two
+        // requests racing on one token would both continue and the loser would
+        // be granted claims for a study_id it does not own — PostgREST reports
+        // "matched nothing" as success, not as an error.
+        const { data: claimed, error: claimErr } = await adminClient
+          .from("study_invites")
+          .update({ status: "used", used_by_user_id: user.id, used_at: new Date().toISOString() })
+          .eq("id", unclaimed.id)
+          .is("used_by_user_id", null)
+          .select("id")
+          .maybeSingle();
+        if (claimErr || !claimed) {
+          console.error("invite claim error:", claimErr, { study_id: studyId });
+          return new Response(
+            JSON.stringify({ error: `研究編號 ${studyId} 已被其他帳號使用，請聯絡研究團隊確認編號。` }),
+            { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        if (await promoteClaims(existingSurgeonId)) return claimsFailed();
       }
       return new Response(JSON.stringify({ patient: existing }), {
         status: 200,
@@ -119,15 +195,6 @@ Deno.serve(async (req: Request) => {
     }
 
     // --- Invite token validation (new patients only) ---
-    // Two-tier: per-patient token (study_invites table) OR global token (env var)
-    let body: { invite_token?: string } = {};
-    try {
-      body = await req.json();
-    } catch {
-      // empty body is ok for backwards compat, but token will be required
-    }
-
-    const inviteToken = body.invite_token;
     if (!inviteToken) {
       return new Response(JSON.stringify({ error: "invite_token is required for new patient registration" }), {
         status: 400,
@@ -176,39 +243,50 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // SECURITY: promote role / study_id / surgeon_id to app_metadata so RLS
-    // helpers (which read app_metadata) can't be bypassed. This MUST succeed
-    // before we consume the invite token — if it fails, return an error so
-    // the user can retry (the patient row is already created and idempotent;
-    // the next attempt will go through the existing-patient resync path).
-    const { error: promoteErr } = await adminClient.auth.admin.updateUserById(user.id, {
-      app_metadata: {
-        ...(user.app_metadata || {}),
-        role,
-        study_id: studyId,
-        surgeon_id: surgeonId,
-      },
-    });
-    if (promoteErr) {
-      console.error("app_metadata promote error:", promoteErr);
-      return new Response(
-        JSON.stringify({ error: "帳號已建立但權限設定失敗，請重新登入或聯絡管理員" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
-
-    // Mark per-patient invite token as used
-    await adminClient
+    // Claim the invite BEFORE promoting. These are separate writes and the
+    // function can die between them; whichever runs first decides what a retry
+    // can prove. Claiming first records ownership (used_by_user_id), so a
+    // failed promote still leaves the retry a way back in via the
+    // existing-patient ownedInvite path. Promoting first would leave the invite
+    // unclaimed and the patient row present — indistinguishable from someone
+    // squatting another patient's study_id.
+    //
+    // `.is("used_by_user_id", null)` makes the claim a compare-and-set: two
+    // concurrent registrations racing on the same token cannot both win.
+    const { data: claimed, error: claimError } = await adminClient
       .from("study_invites")
       .update({
         status: "used",
         used_by_user_id: user.id,
         used_at: new Date().toISOString(),
       })
-      .eq("id", invite.id);
+      .eq("id", invite.id)
+      .is("used_by_user_id", null)
+      .select("id")
+      .maybeSingle();
 
-    // Audit trail: patient onboarding
-    await adminClient.from("audit_trail").insert({
+    if (claimError || !claimed) {
+      console.error("invite claim error:", claimError, { study_id: studyId });
+      return new Response(
+        JSON.stringify({ error: "邀請碼已被使用，請聯絡研究團隊。" }),
+        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // SECURITY: promote role / study_id / surgeon_id to app_metadata so RLS
+    // helpers (which read app_metadata) can't be bypassed.
+    const promoteErr = await promoteClaims(surgeonId);
+    if (promoteErr) {
+      console.error("app_metadata promote error:", promoteErr);
+      return claimsFailed();
+    }
+
+    // Audit trail: patient onboarding. Best-effort — onboarding has already
+    // succeeded and must not be failed over a missing log line — but the error
+    // is surfaced, not discarded: audit-trail completeness is an IRB-auditable
+    // property, and PostgREST reports failures via { error } rather than
+    // throwing, so an unchecked await here would be 100% silent.
+    const { error: auditError } = await adminClient.from("audit_trail").insert({
       actor_id: user.id,
       actor_role: "patient",
       action: "patient.onboard",
@@ -219,6 +297,9 @@ Deno.serve(async (req: Request) => {
         invite_id: invite.id,
       },
     });
+    if (auditError) {
+      console.error("[patient-onboard] AUDIT WRITE FAILED", { study_id: studyId, user_id: user.id, error: auditError });
+    }
 
     return new Response(JSON.stringify({ patient }), {
       status: 201,

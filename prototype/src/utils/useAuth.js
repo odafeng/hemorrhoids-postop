@@ -3,12 +3,14 @@ import { useState, useEffect } from 'react';
 import { onAuthStateChange, getSession, ensurePatient, getPODFromDate, signOut } from './supabaseService';
 import supabase from './supabaseClient';
 import { seedDemoData } from './storage';
+import { clearQueue, getQueueCount } from './offlineQueue';
 
 export function useAuth() {
   const [authState, setAuthState] = useState('loading'); // 'loading' | 'onboarding' | 'loggedIn' | 'loggedOut'
   const [isDemo, setIsDemo] = useState(false);
   const [userInfo, setUserInfo] = useState(null);
   const [loadingTooLong, setLoadingTooLong] = useState(false);
+  const [onboardError, setOnboardError] = useState(null);
 
   const loadUserInfo = async (session, { attemptedSelfHeal = false } = {}) => {
     const user = session?.user;
@@ -56,9 +58,14 @@ export function useAuth() {
         appMetaDrift: !appStudyId,
       });
       setAuthState('onboarding');
+      setOnboardError(null);
       try {
-        if (inviteToken) sessionStorage.removeItem('invite_token');
         await ensurePatient(userStudyId, inviteToken);
+        // Only burn the one-shot invite token once the server has actually
+        // accepted it. Dropping it before the call stranded the patient on
+        // any transient failure: no patients row, no app_metadata claims,
+        // and no UI anywhere to re-enter the code.
+        if (inviteToken) sessionStorage.removeItem('invite_token');
         const { data: { session: fresh }, error: refreshError } = await supabase.auth.refreshSession();
         if (refreshError) throw refreshError;
         if (fresh) {
@@ -68,6 +75,9 @@ export function useAuth() {
         }
       } catch (err) {
         console.error('[loadUserInfo] self-heal failed, falling through:', err);
+        // Token is deliberately left in sessionStorage so a retry (reload or
+        // re-login in the same tab) can still complete the onboarding.
+        setOnboardError(err?.message || '帳號設定失敗，請重試或聯絡研究團隊。');
         // Fall through to normal setUserInfo below — dashboard will show
         // MISSING_PATIENT and the user can fall back to manual logout+login.
       }
@@ -160,6 +170,17 @@ export function useAuth() {
   };
 
   const handleLogout = async (navigate) => {
+    // The offline queue is keyed by study_id but flushed with whatever session
+    // is active. On a shared clinic device, leaving items behind would send the
+    // previous patient's report under the next patient's credentials.
+    const stranded = getQueueCount();
+    if (stranded > 0) {
+      console.warn(`[handleLogout] discarding ${stranded} unsent queued report(s)`);
+    }
+    clearQueue();
+    // A pending invite token is equally account-specific.
+    if (typeof window !== 'undefined') sessionStorage.removeItem('invite_token');
+
     if (isDemo) {
       setIsDemo(false);
       setUserInfo(null);
@@ -173,6 +194,7 @@ export function useAuth() {
       setUserInfo(null);
       setAuthState('loggedOut');
     }
+    setOnboardError(null);
     navigate('/');
   };
 
@@ -187,7 +209,7 @@ export function useAuth() {
   };
 
   return {
-    authState, isDemo, userInfo, loadingTooLong,
+    authState, isDemo, userInfo, loadingTooLong, onboardError,
     handleLogin, handleLogout, syncSurgeryDate,
     setAuthState, setUserInfo,
   };

@@ -5,6 +5,7 @@ import {
   removeFromQueue,
   getQueueCount,
   flushQueue,
+  clearQueue,
 } from '../offlineQueue';
 
 // crypto.randomUUID is used inside enqueueReport
@@ -103,7 +104,7 @@ describe('offlineQueue', () => {
   describe('flushQueue', () => {
     it('returns {flushed:0, failed:0} for empty queue', async () => {
       const result = await flushQueue(vi.fn());
-      expect(result).toEqual({ flushed: 0, failed: 0 });
+      expect(result).toEqual({ flushed: 0, failed: 0, errors: [] });
     });
 
     it('calls saveReportFn for each item and removes successful ones', async () => {
@@ -116,7 +117,7 @@ describe('offlineQueue', () => {
       expect(saveFn).toHaveBeenCalledTimes(2);
       expect(saveFn).toHaveBeenCalledWith('S001', 1, { pain: 1 });
       expect(saveFn).toHaveBeenCalledWith('S002', 2, { pain: 2 });
-      expect(result).toEqual({ flushed: 2, failed: 0 });
+      expect(result).toEqual({ flushed: 2, failed: 0, errors: [] });
       expect(getQueueCount()).toBe(0);
     });
 
@@ -132,11 +133,56 @@ describe('offlineQueue', () => {
 
       const result = await flushQueue(saveFn);
 
-      expect(result).toEqual({ flushed: 2, failed: 1 });
+      expect(result.flushed).toBe(2);
+      expect(result.failed).toBe(1);
       // Only the failed item remains
       const remaining = getQueuedReports();
       expect(remaining).toHaveLength(1);
       expect(remaining[0].studyId).toBe('S002');
+    });
+
+    // The patient was already shown a success tick when the report was queued,
+    // so a stuck item is a report they believe was submitted. The caller can
+    // only warn them if flushQueue actually says which ones failed.
+    it('reports which items failed so the caller can surface them', async () => {
+      enqueueReport('S001', 1, { pain: 1 }, '2026-07-20');
+      enqueueReport('S002', 2, { pain: 9, fever: true }, '2026-07-21');
+
+      const saveFn = vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('new row violates row-level security policy'));
+
+      const result = await flushQueue(saveFn);
+
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toMatchObject({
+        studyId: 'S002',
+        reportDate: '2026-07-21',
+        pod: 2,
+        message: expect.stringContaining('row-level security'),
+      });
+    });
+
+    it('records attempt count on a stuck item so repeated failures are diagnosable', async () => {
+      enqueueReport('S001', 1, { pain: 1 });
+      const saveFn = vi.fn().mockRejectedValue(new Error('boom'));
+
+      await flushQueue(saveFn);
+      await flushQueue(saveFn);
+
+      const [stuck] = getQueuedReports();
+      expect(stuck.attempts).toBe(2);
+      expect(stuck.lastError).toBe('boom');
+    });
+
+    it('clearQueue drops everything (logout on a shared clinic device)', async () => {
+      enqueueReport('S001', 1, { pain: 1 });
+      enqueueReport('S002', 2, { pain: 2 });
+      expect(getQueueCount()).toBe(2);
+
+      clearQueue();
+
+      expect(getQueueCount()).toBe(0);
     });
   });
 });

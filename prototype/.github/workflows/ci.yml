@@ -255,6 +255,22 @@ jobs:
           name: dist
           path: dist/
 
+      # Idempotently (re)provision the E2E accounts + fixture rows. Without this
+      # the suite depends on rows surviving in the shared Supabase project, so
+      # any DB cleanup (e.g. purging test patients before enrolment) silently
+      # breaks CI on the next push.
+      - name: Seed E2E users and fixtures
+        run: npm run seed:e2e
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          E2E_RESEARCHER_EMAIL: ${{ secrets.E2E_RESEARCHER_EMAIL }}
+          E2E_RESEARCHER_PASSWORD: ${{ secrets.E2E_RESEARCHER_PASSWORD }}
+          E2E_PI_EMAIL: ${{ secrets.E2E_PI_EMAIL }}
+          E2E_PI_PASSWORD: ${{ secrets.E2E_PI_PASSWORD }}
+
       - name: Run E2E tests (auth mode)
         run: |
           CI=true npx playwright test e2e/auth-flow.spec.ts e2e/researcher-flow.spec.ts e2e/patient-registration.spec.ts

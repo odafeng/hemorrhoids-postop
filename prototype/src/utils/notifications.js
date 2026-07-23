@@ -103,8 +103,10 @@ export async function showReminderNotification() {
 
   const opts = {
     body: '您今日尚未填寫症狀回報，請花 30 秒完成填寫。',
-    icon: '/icon.svg',
-    badge: '/favicon.svg',
+    // PNG, not SVG — Android Chrome cannot decode SVG notification icons and
+    // falls back to a generic bell (see public/sw.js push handler).
+    icon: '/icon-192.png',
+    badge: '/badge-96.png',
     tag: 'daily-reminder',      // deduplicate — only one at a time
     renotify: true,
     vibrate: [200, 100, 200],   // Android heads-up won't vibrate without explicit pattern

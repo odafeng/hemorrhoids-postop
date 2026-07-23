@@ -23,3 +23,12 @@ prototype/.env.local
 # Personal documents
 CV_*.docx
 STATUS
+
+# Supabase data dumps taken before destructive cleanups — contains patient
+# records and auth users, must never be committed.
+backup_before_cleanup_*/
+
+# Local browser-automation artifacts
+.playwright-mcp/
+*.webp
+login-prod.png

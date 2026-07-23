@@ -17,7 +17,7 @@ import PageErrorBoundary from './components/PageErrorBoundary';
 import ConsentPage from './pages/ConsentPage';
 import SurgicalRecord from './pages/SurgicalRecord';
 import * as I from './components/Icons';
-import { installGlobalErrorHandlers, initSentry } from './utils/errorLogger';
+import { installGlobalErrorHandlers, initSentry, logError } from './utils/errorLogger';
 import { useAuth } from './utils/useAuth';
 import { getTodayReport as getLocalTodayReport } from './utils/storage';
 import { startReminderScheduler, stopReminderScheduler } from './utils/notifications';
@@ -45,7 +45,7 @@ export default function App() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const {
-    authState, isDemo, userInfo, loadingTooLong,
+    authState, isDemo, userInfo, loadingTooLong, onboardError,
     handleLogin, handleLogout, syncSurgeryDate,
     setAuthState, setUserInfo,
   } = useAuth();
@@ -125,10 +125,21 @@ export default function App() {
   useEffect(() => {
     if (authState !== 'loggedIn' || isDemo) return;
     const handleOnline = async () => {
-      const { flushed } = await flushQueue(sb.saveReport);
+      const { flushed, failed, errors } = await flushQueue(sb.saveReport);
       if (flushed > 0) {
         console.info(`[OfflineQueue] Flushed ${flushed} queued reports`);
         setRefreshKey(k => k + 1); // refresh dashboard
+      }
+      if (failed > 0) {
+        // The patient already saw a success tick for these. Silently retrying
+        // forever means a report with fever/clots can be lost with positive
+        // feedback given — report it so someone can act.
+        console.error('[OfflineQueue] failed to flush queued reports', errors);
+        logError(new Error(`OfflineQueue flush failed: ${failed} report(s) stuck`), {
+          context: 'offlineQueue.flush',
+          studyId: userInfo?.studyId,
+          errors,
+        });
       }
     };
     window.addEventListener('online', handleOnline);
@@ -142,6 +153,7 @@ export default function App() {
   const commonProps = {
     isDemo,
     userInfo,
+    onboardError,
     onLogout: () => handleLogout(navigate),
     onSyncSurgeryDate: syncSurgeryDate,
   };
@@ -222,8 +234,16 @@ export default function App() {
     );
   }
 
-  // Consent gate — patients must sign before using the app
-  if (consentChecked && !consentSigned && !isDemo && userInfo?.role === 'patient') {
+  // Consent gate — patients must sign before using the app.
+  //
+  // Skipped when onboarding failed: without app_metadata claims every RLS
+  // check denies, so getPatient() returns null and `consent_signed` reads as
+  // false even for someone who already signed. Gating here would hide the
+  // Dashboard's onboarding error + retry behind a consent form whose
+  // recordConsent() UPDATE matches zero rows and reports no error — the
+  // patient would re-sign on every reload, each time producing a consent
+  // record that never reaches the database.
+  if (consentChecked && !consentSigned && !isDemo && userInfo?.role === 'patient' && !onboardError) {
     return (
       <ConsentPage
         userInfo={userInfo}

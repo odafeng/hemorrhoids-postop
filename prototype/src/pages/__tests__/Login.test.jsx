@@ -140,9 +140,35 @@ describe('Login Page', () => {
     await waitFor(() => {
       expect(mockSignUp).toHaveBeenCalled();
       expect(mockSignUp.mock.calls[0][2].study_id).toBe('HSF-099');
-      expect(alertSpy).toHaveBeenCalledWith('帳號建立成功！請登入。');
     });
+    // Supabase has mailer_autoconfirm on, so signUp already established a
+    // session — telling the user to "go log in" contradicted what they saw.
+    expect(alertSpy).not.toHaveBeenCalled();
     alertSpy.mockRestore();
+  });
+
+  it('stashes the invite token for the onboarding step', async () => {
+    mockSignUp.mockResolvedValue({});
+    render(<Login onLogin={vi.fn()} />);
+    fireEvent.click(getTab('註冊'));
+    fireEvent.change(screen.getByPlaceholderText('請輸入研究團隊提供的邀請碼'), { target: { value: '  ABC123  ' } });
+    fireEvent.change(screen.getByDisplayValue('請選擇主刀醫師'), { target: { value: 'HSF' } });
+    fireEvent.change(screen.getByPlaceholderText('001'), { target: { value: '99' } });
+    fireEvent.change(screen.getByPlaceholderText('your@email.com'), { target: { value: 'new@test.com' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'pass123' } });
+    fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-03-15' } });
+    fireEvent.submit(document.querySelector('button[type="submit"]'));
+    await waitFor(() => expect(mockSignUp).toHaveBeenCalled());
+    expect(sessionStorage.getItem('invite_token')).toBe('ABC123');
+  });
+
+  it('hides the role switch on the register tab (patients only)', () => {
+    render(<Login onLogin={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /研究人員/ })).toBeInTheDocument();
+    fireEvent.click(getTab('註冊'));
+    // Registration always creates a patient; researcher/PI accounts come from
+    // the PI-only researcher-invite flow.
+    expect(screen.queryByRole('button', { name: /研究人員/ })).not.toBeInTheDocument();
   });
 
   it('shows error when invite code is empty on register', async () => {

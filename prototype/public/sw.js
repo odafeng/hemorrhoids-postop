@@ -1,7 +1,10 @@
-const CACHE_NAME = 'postop-tracker-v7';
+const CACHE_NAME = 'postop-tracker-v8';
+const CACHE_PREFIX = 'postop-tracker-';
 const STATIC_ASSETS = [
   '/icon.svg',
   '/favicon.svg',
+  '/icon-192.png',
+  '/badge-96.png',
   '/manifest.json',
 ];
 
@@ -19,14 +22,20 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
-      return Promise.all(
-        keys
-          .filter((key) => key !== CACHE_NAME)
-          .map((key) => caches.delete(key))
-      );
-    }).then(() => {
-      // Notify all open clients that a new version is active
-      return self.clients.matchAll({ type: 'window' }).then((clients) => {
+      // A cache from a PREVIOUS version means this activation is an upgrade,
+      // not a first install. The page no longer auto-reloads on
+      // controllerchange, so a first-install notification would surface a
+      // bogus "系統已更新" banner to someone who just opened the app for the
+      // first time.
+      const stale = keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME);
+      const isUpgrade = stale.length > 0;
+      return Promise.all(stale.map((key) => caches.delete(key))).then(() => isUpgrade);
+    }).then((isUpgrade) => {
+      if (!isUpgrade) return;
+      // Notify open clients so <UpdateBanner> can offer a reload. We do NOT
+      // reload for them: a deploy mid-visit would discard whatever the patient
+      // had typed into the symptom report.
+      return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
         clients.forEach((client) => {
           client.postMessage({ type: 'SW_UPDATED', version: CACHE_NAME });
         });
@@ -68,7 +77,9 @@ self.addEventListener('fetch', (event) => {
       caches.open(CACHE_NAME)
         .then((cache) => cache.put(req, res))
         .catch(() => {});
-    } catch {}
+    } catch {
+      // Caching is best-effort; a failed put must never break the response.
+    }
   };
 
   // Network-first for navigation (HTML) and hashed assets (JS/CSS)
@@ -103,8 +114,11 @@ self.addEventListener('push', (event) => {
   const defaults = {
     title: '術後追蹤提醒 🏥',
     body: '您今日尚未填寫症狀回報，請花 30 秒完成填寫。',
-    icon: '/icon.svg',
-    badge: '/favicon.svg',
+    // PNG, not SVG: Android Chrome cannot decode an SVG notification icon and
+    // silently falls back to a generic bell, so the daily reminder loses all
+    // brand recognition. iOS ignores this field and uses the home-screen icon.
+    icon: '/icon-192.png',
+    badge: '/badge-96.png',
     tag: 'daily-reminder',
     data: { action: 'open-report' },
   };

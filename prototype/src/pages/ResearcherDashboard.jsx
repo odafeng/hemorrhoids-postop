@@ -17,6 +17,7 @@ const getSurgeonId = (p) => p.surgeon_id || (p.study_id?.includes('-') ? p.study
 export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLogout }) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [patients, setPatients] = useState([]);
   const [adherence, setAdherence] = useState([]);
   const [alerts, setAlerts] = useState([]);
@@ -147,6 +148,7 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       if (isDemo) {
         const mock = getResearcherMockData();
@@ -170,7 +172,11 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
         setAllReports(reports);
       }
     } catch (err) {
+      // Never fall through to a rendered dashboard on a read failure: an empty
+      // alerts list is pixel-identical to "every patient is fine", and this
+      // screen is where the 24h alert review actually happens.
       console.error('Researcher data error:', err);
+      setLoadError(err?.message || '資料載入失敗');
     } finally {
       setLoading(false);
     }
@@ -264,6 +270,31 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
     return (
       <div className="page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
         <p style={{ color: 'var(--ink-2)', animation: 'pulse 1s infinite', fontFamily: 'var(--font-mono)' }}>載入中…</p>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div style={{ textAlign: 'center', maxWidth: 340 }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: '50%',
+            background: 'var(--danger-soft)', color: 'var(--danger)',
+            display: 'grid', placeItems: 'center', margin: '0 auto var(--space-md)',
+          }}>
+            <I.Alert width={24} height={24} />
+          </div>
+          <h2 className="page-title" style={{ fontSize: 18, marginBottom: 4 }}>資料載入失敗</h2>
+          <p style={{ color: 'var(--ink-2)', fontSize: 12.5, marginBottom: 'var(--space-md)' }}>
+            目前畫面<strong>不代表沒有警示</strong>，請重新載入後再判讀。
+          </p>
+          <p style={{
+            color: 'var(--ink-3)', fontSize: 11, marginBottom: 'var(--space-md)',
+            fontFamily: 'var(--font-mono)', wordBreak: 'break-all',
+          }}>{loadError}</p>
+          <button className="btn btn-primary" onClick={loadData}>重新載入</button>
+        </div>
       </div>
     );
   }

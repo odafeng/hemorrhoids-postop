@@ -12,7 +12,7 @@ const PAIN_WORD = (v) => v == null ? '—' : v === 0 ? '無痛' : v <= 3 ? '輕�
 
 const PHASE = (pod) => pod === 0 ? '手術當日' : pod <= 3 ? '急性期' : pod <= 7 ? '早期恢復' : pod <= 14 ? '中期恢復' : '後期追蹤';
 
-export default function Dashboard({ onNavigate, isDemo, userInfo, onLogout, onSyncSurgeryDate }) {
+export default function Dashboard({ onNavigate, isDemo, userInfo, onLogout, onSyncSurgeryDate, onboardError }) {
   const { data, isLoading, error, refetch, isFetching } = useDashboardData(isDemo, userInfo);
   const queryClient = useQueryClient();
 
@@ -52,8 +52,21 @@ export default function Dashboard({ onNavigate, isDemo, userInfo, onLogout, onSy
             {isMissingPatient ? '尚未完成病人資料同步' : '載入失敗'}
           </h2>
           <p style={{ color: 'var(--ink-2)', fontSize: 12.5, marginBottom: 'var(--space-md)' }}>
-            {isMissingPatient ? '請重新登入或聯絡研究團隊。' : error.message}
+            {isMissingPatient
+              // The onboarding failure reason is far more actionable than the
+              // generic advice (e.g. "study id already taken" vs "try again").
+              ? (onboardError || '請重新登入或聯絡研究團隊。')
+              : error.message}
           </p>
+          {isMissingPatient && (
+            <button
+              className="btn btn-primary"
+              style={{ marginBottom: 'var(--space-sm)' }}
+              onClick={() => window.location.reload()}
+            >
+              重試
+            </button>
+          )}
           <button className="btn btn-secondary" onClick={onLogout}>重新登入</button>
           <div style={{
             marginTop: 'var(--space-lg)', padding: 10, borderRadius: 8,

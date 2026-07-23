@@ -91,8 +91,10 @@ export default function Login({ onLogin, theme, onToggleTheme }) {
           surgery_date: surgeryDate || new Date().toLocaleDateString('en-CA'),
         });
         setError('');
+        // Supabase runs with mailer_autoconfirm on, so signUp already returned a
+        // session and onAuthStateChange is taking the user straight into
+        // onboarding. Telling them to "go log in" contradicts what they see.
         setMode('login');
-        alert('帳號建立成功！請登入。');
       } else {
         await signIn(email, password);
         if (rememberMe) {
@@ -157,7 +159,11 @@ export default function Login({ onLogin, theme, onToggleTheme }) {
         </div>
       )}
 
-      {mode !== 'forgot' && (
+      {/* Registration is patients-only — researcher/PI accounts are created by
+          the PI via researcher-invite. Showing the role switch here offered a
+          "研究人員" option that still rendered the patient fields and always
+          created a patient account. */}
+      {mode === 'login' && (
         <div className="role-toggle">
           <button className={role === 'patient' ? 'on' : ''} onClick={() => setRole('patient')}>
             <I.User width={12} height={12} /> 病人
