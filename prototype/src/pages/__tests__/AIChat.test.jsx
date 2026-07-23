@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import AIChat from '../AIChat';
+import { getClaudeResponse } from '../../utils/claudeService';
+import { saveChatLog } from '../../utils/supabaseService';
 
 // Mock storage for demo mode
 vi.mock('../../utils/storage', () => ({
@@ -286,6 +288,67 @@ describe('AIChat Page', () => {
     await waitFor(() => {
       const labels = screen.getAllByText(/AI · (離線模式|Claude Haiku)/);
       expect(labels.length).toBeGreaterThan(0);
+    });
+  });
+  // A failed AI call returns a user-facing apology with source 'error'. Storing
+  // that as an AI reply put an error string into the researcher review queue
+  // and into the study's record of AI interactions, where it is
+  // indistinguishable from a genuine exchange.
+  describe('chat logging on failure', () => {
+    const patientProps = {
+      isDemo: false,
+      userInfo: { studyId: 'HSF-001', pod: 5, role: 'patient' },
+    };
+
+    const send = async (text) => {
+      const input = screen.getByPlaceholderText(/輸入您的問題/);
+      fireEvent.change(input, { target: { value: text } });
+      fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+    };
+
+    it('does not log a failed exchange to the study record', async () => {
+      getClaudeResponse.mockResolvedValue({
+        text: 'AI 衛教暫時不可用，請稍後再試。如有緊急狀況，請聯絡您的醫療團隊。',
+        source: 'error',
+      });
+      render(<AIChat {...patientProps} />);
+      await waitFor(() => expect(screen.getByPlaceholderText(/輸入您的問題/)).toBeInTheDocument());
+
+      await send('傷口怎麼照顧？');
+
+      await waitFor(() => expect(getClaudeResponse).toHaveBeenCalled());
+      expect(saveChatLog).not.toHaveBeenCalled();
+    });
+
+    it('still logs a successful exchange', async () => {
+      getClaudeResponse.mockResolvedValue({
+        text: '溫水坐浴每次 10-15 分鐘。',
+        source: 'claude',
+        ragSources: [{ title: '傷口照護 — 溫水坐浴' }],
+      });
+      render(<AIChat {...patientProps} />);
+      await waitFor(() => expect(screen.getByPlaceholderText(/輸入您的問題/)).toBeInTheDocument());
+
+      await send('傷口怎麼照顧？');
+
+      await waitFor(() => expect(saveChatLog).toHaveBeenCalled());
+      expect(saveChatLog).toHaveBeenCalledWith(
+        'HSF-001',
+        '傷口怎麼照顧？',
+        '溫水坐浴每次 10-15 分鐘。',
+        '傷口照護 — 溫水坐浴',
+      );
+    });
+
+    it('logs a successful exchange even when RAG matched nothing', async () => {
+      getClaudeResponse.mockResolvedValue({ text: '請聯絡醫療團隊。', source: 'claude' });
+      render(<AIChat {...patientProps} />);
+      await waitFor(() => expect(screen.getByPlaceholderText(/輸入您的問題/)).toBeInTheDocument());
+
+      await send('隨便問一個問題');
+
+      await waitFor(() => expect(saveChatLog).toHaveBeenCalled());
+      expect(saveChatLog.mock.calls[0][3]).toBeNull();
     });
   });
 });

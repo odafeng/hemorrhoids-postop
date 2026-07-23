@@ -91,7 +91,14 @@ export default function AIChat({ isDemo, userInfo }) {
     if (isDemo) {
       saveChatMessage({ role: 'user', text: text.trim() });
       saveChatMessage({ role: 'ai', text: response, source });
-    } else if (userInfo?.studyId) {
+    } else if (userInfo?.studyId && source !== 'error') {
+      // Only real model output belongs in the study record. On failure
+      // getClaudeResponse returns source 'error' with a user-facing apology
+      // ("AI 衛教暫時不可用…"); logging that stored the apology as if it were an
+      // AI reply. It then surfaced in the researcher review queue as a
+      // conversation to review, and left rows indistinguishable from genuine
+      // interactions in any later count of AI usage or reply quality. The
+      // failure itself is already captured by logError() in claudeService.
       try {
         const topic = ragSources && ragSources.length > 0
           ? ragSources.map(s => s.title || s.source_file).join('; ')
