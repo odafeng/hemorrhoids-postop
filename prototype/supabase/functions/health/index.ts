@@ -1,50 +1,28 @@
 // Supabase Edge Function: health
-// Simple health check — verifies DB connectivity
+// Active liveness probe for the ai-chat dependency chain: Anthropic generation
+// (with a max_tokens:1 canary that catches credit exhaustion), Supabase DB, and
+// OpenAI embeddings (non-fatal). Returns 200 healthy / 503 degraded.
 // Deploy: supabase functions deploy health --no-verify-jwt
+// Gate: set the HEALTH_TOKEN secret; callers must pass ?token=<value>.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createHandler, type HealthDeps } from "./checks.ts";
 
-Deno.serve(async (_req: Request) => {
-  const start = Date.now();
-  const checks: Record<string, string> = {};
+const client = createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+);
 
-  // Check DB connectivity
-  try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const client = createClient(supabaseUrl, serviceKey);
-
+const deps: HealthDeps = {
+  getEnv: (name) => Deno.env.get(name),
+  fetch: (input, init) => fetch(input, init),
+  dbCount: async (table) => {
     const { count, error } = await client
-      .from("patients")
+      .from(table)
       .select("*", { count: "exact", head: true });
+    return { count, error };
+  },
+};
 
-    if (error) throw error;
-    checks.database = "ok";
-    checks.patients_count = String(count ?? 0);
-  } catch (e) {
-    checks.database = `error: ${e.message}`;
-  }
-
-  // Check Claude API key exists
-  checks.claude_api = Deno.env.get("CLAUDE_API_KEY") ? "configured" : "missing";
-
-  // Check VAPID keys
-  checks.vapid = Deno.env.get("VAPID_PUBLIC_KEY") ? "configured" : "missing";
-
-  const latency = Date.now() - start;
-  const allOk = checks.database === "ok" && checks.claude_api === "configured";
-
-  return new Response(
-    JSON.stringify({
-      status: allOk ? "healthy" : "degraded",
-      latency_ms: latency,
-      checks,
-      timestamp: new Date().toISOString(),
-    }),
-    {
-      status: allOk ? 200 : 503,
-      headers: { "Content-Type": "application/json" },
-    },
-  );
-});
+Deno.serve(createHandler(deps));
