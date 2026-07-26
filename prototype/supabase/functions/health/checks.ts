@@ -102,7 +102,10 @@ export function createHandler(deps: HealthDeps) {
     // unauthenticated caller is rejected before any (paid) upstream call runs.
     const expected = deps.getEnv("HEALTH_TOKEN");
     if (expected) {
-      const token = new URL(req.url).searchParams.get("token");
+      // Prefer the header (keeps the secret out of URLs / request logs); fall
+      // back to the query param for backward compatibility.
+      const token = req.headers.get("x-health-token") ??
+        new URL(req.url).searchParams.get("token");
       if (token !== expected) {
         return new Response(
           JSON.stringify({ error: "unauthorized" }),

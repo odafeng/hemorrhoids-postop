@@ -127,6 +127,15 @@ Deno.test("handler rejects wrong token without running any checks", async () => 
   assert.equal(calls.length, 0);
 });
 
+Deno.test("handler accepts token via x-health-token header (no secret in URL)", async () => {
+  const { deps } = baseDeps({ env: { HEALTH_TOKEN: "secret" } });
+  const res = await createHandler(deps)(
+    new Request("https://x/health", { headers: { "x-health-token": "secret" } }),
+  );
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).status, "healthy");
+});
+
 Deno.test("handler accepts correct token, returns 503 when degraded", async () => {
   const { deps } = baseDeps({
     env: { HEALTH_TOKEN: "secret" },

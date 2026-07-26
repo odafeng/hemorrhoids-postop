@@ -36,7 +36,10 @@ actionable reason. Response body never echoes key values or patient data.
    ```
 3. **Better Stack monitor**:
    - Type: HTTP(S) uptime monitor.
-   - URL: `https://<project-ref>.supabase.co/functions/v1/health?token=<HEALTH_TOKEN>`
+   - URL: `https://<project-ref>.supabase.co/functions/v1/health`
+   - Auth: send the token as request header `x-health-token: <HEALTH_TOKEN>` (preferred —
+     keeps the secret out of URLs and request logs). The `?token=<HEALTH_TOKEN>` query
+     param also works for backward compatibility.
    - Frequency: as low as the plan allows (free ≈ 3 min — already ~10× GitHub's
      throttled cadence).
    - Down condition: any non-2xx (the endpoint returns `503` when degraded).
@@ -46,7 +49,7 @@ actionable reason. Response body never echoes key values or patient data.
 ## Verify
 
 - **Locally**: `deno test supabase/functions/health/checks.test.ts` (logic, no network).
-- **Live**: `curl "<url>?token=<token>"` → `200` healthy; without token → `401`.
+- **Live**: `curl -H "x-health-token: <token>" "<url>"` → `200` healthy; without → `401`.
 - **Alert path**: point Better Stack at a wrong token briefly → it sees `401`/down →
   phone alert. Restore after.
 

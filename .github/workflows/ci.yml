@@ -196,8 +196,10 @@ jobs:
       - name: Smoke test — health endpoint reports healthy
         run: |
           set -euo pipefail
+          # Token via header, not query string, to keep it out of request logs.
           body=$(curl -fsS --retry 5 --retry-delay 3 \
-            "https://${PROJECT_REF}.supabase.co/functions/v1/health?token=${HEALTH_TOKEN}")
+            -H "x-health-token: ${HEALTH_TOKEN}" \
+            "https://${PROJECT_REF}.supabase.co/functions/v1/health")
           echo "$body"
           echo "$body" | grep -q '"status":"healthy"'
           echo "$body" | grep -q '"database":"ok"'
