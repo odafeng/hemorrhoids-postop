@@ -28,21 +28,17 @@ descending 排序）。目前只用來算 `totalReports` 與最新一筆，其�
 
 ## 元件與改動
 
-### 1. `components/PainTrendChart.jsx`（新增，共用）
-把 `History.jsx` 內嵌的疼痛趨勢 SVG 折線圖抽成獨立元件，供病人端與研究者端共用，
-避免兩處各複製一份 ~40 行 SVG 而日後漂移。
+> **決策（2026-07-26 定案）**：疼痛趨勢圖由研究者頁**自帶一份 inline SVG**，
+> **不**抽共用元件、**不**動病人面向的 `History.jsx`。收案期間 blast radius 最小；
+> 代價是與 History 的趨勢圖有約 40 行重複，接受。
 
-- **Props**：`reports`（`[{ pain, date, pod }]`，已由呼叫端映射好欄位）、
-  `defaultRange`（預設 14）。
-- **行為**：x 軸 POD（或無手術日時退回日期）、y 軸 NRS 0–10；點依
-  `<4 綠 / 4–6 黃 / ≥7 紅` 上色；提供 7D / 14D / ALL 切換。
-- **安全網**：`History.test.jsx` 既有測試保護重構；抽出後 `History.jsx` 改用此元件，
-  行為不變、測試須續綠。
-
-### 2. `pages/ResearcherPatientLookup.jsx`（改動）
+### 1. `pages/ResearcherPatientLookup.jsx`（改動）
 - 查詢成功後，把整份 `reports` 陣列存進 `result`。
 - 在「CASE DETAIL」卡下方新增兩段：
-  - **疼痛趨勢**：`<PainTrendChart reports={reports.map(r => ({ pain: r.pain_nrs, date: r.report_date, pod: r.pod }))} />`。
+  - **疼痛趨勢**：頁內自帶一份 SVG 折線圖（改寫自 `History.jsx` 的趨勢圖，
+    不共用）。x 軸 POD（無手術日時退回日期）、y 軸 NRS 0–10；點依
+    `<4 綠 / 4–6 黃 / ≥7 紅` 上色；提供 7D / 14D / ALL 切換。餵入原始列的
+    `pain_nrs` / `report_date` / `pod`。
   - **逐日明細**：沿用 `History.jsx` 每日症狀卡片樣式（POD 標籤 + 疼痛/出血/排便/
     發燒/傷口/排尿/肛門控制，依嚴重度上色），**唯讀、不放修改鈕**。傷口顯示沿用
     `schemaContract` 的 `isWoundNormal` / `formatWound`。
@@ -50,11 +46,11 @@ descending 排序）。目前只用來算 `totalReports` 與最新一筆，其�
 - **路由參數自動載入**：支援 `useParams()` 的 `studyId`；若存在則於掛載時自動執行
   查詢（等同使用者輸入該編號按查詢）。保留原本手動輸入查詢入口。
 
-### 3. `App.jsx`（改動）
+### 2. `App.jsx`（改動）
 新增路由 `/lookup/:studyId`，指向同一個 `ResearcherPatientLookup`。既有 `/lookup`
 （手動查詢）保留。
 
-### 4. `pages/ResearcherDashboard.jsx`（改動）
+### 3. `pages/ResearcherDashboard.jsx`（改動）
 cohort 每一列可點 → `navigate('/lookup/' + row.study_id)`。
 - 該列已有「撰寫手術紀錄」按鈕：需 `stopPropagation`，避免點按鈕時誤觸整列導覽。
 - 列本身以可鍵盤操作方式呈現（`role="button"` + Enter/Space，或包成 `<button>`），
@@ -66,18 +62,16 @@ cohort 每一列可點 → `navigate('/lookup/' + row.study_id)`。
   - mock `sb.getAllReports` 回傳兩筆逐日資料 → 查詢後驗證逐日明細渲染出 POD 標籤與
     疼痛值、且趨勢圖有渲染（存在對應 SVG / testid）。
   - 0 筆 → 顯示「尚無回報紀錄」。
-- `History.test.jsx`：抽出 `PainTrendChart` 後須維持綠燈（重構回歸保護）。
 - 視需要補一則 `ResearcherDashboard` 列可點導覽的測試。
 
 ## 部署與風險
 
 - 純前端變更 → 需**一次前端部署**（Vercel）。依 [[no-deploy-during-enrolment]]，
   排傍晚/深夜；部署後病人端會看到「系統已更新」橫幅，以 test 帳號驗證。
-- 抽出 `PainTrendChart` 會動到病人端 `History.jsx`（患者面向），列為主要風險；由
-  `History.test.jsx` 既有測試把關。若不希望在收案期間動到 History，替代方案是研究者頁
-  自帶一份圖（接受重複）——待 spec 審查決定。
+- 改動範圍全在研究者面向頁面（`ResearcherPatientLookup` / `ResearcherDashboard` /
+  `App.jsx` 路由）；**不觸碰病人面向的 `History.jsx`**，收案期間 blast radius 最小。
 
-## 決策待確認
+## 已定案決策
 
-1. `PainTrendChart` 抽成共用（會動到 History）vs 研究者頁自帶一份（重複但不碰 History）。
-   **建議**：抽成共用，靠 History 既有測試護航。
+1. 疼痛趨勢圖 → 研究者頁自帶一份 inline SVG，不抽共用、不碰 `History.jsx`。
+   接受與 History 趨勢圖約 40 行重複，換取收案期間最小風險。
