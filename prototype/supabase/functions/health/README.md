@@ -27,6 +27,9 @@ actionable reason. Response body never echoes key values or patient data.
 
 1. **Supabase secret** `HEALTH_TOKEN` (done): a random string. Callers must pass
    `?token=<value>`; unauthenticated callers get `401` before any paid canary runs.
+   The token has three consumers — keep them in sync when rotating: this Supabase
+   secret, the **GitHub Actions secret `HEALTH_TOKEN`** (ci.yml's deploy smoke test
+   curls `/health?token=…`), and the Better Stack monitor URL below.
 2. **Deploy** (done, additive; does not touch ai-chat):
    ```sh
    supabase functions deploy health --no-verify-jwt

@@ -133,6 +133,7 @@ jobs:
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      HEALTH_TOKEN: ${{ secrets.HEALTH_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -196,7 +197,7 @@ jobs:
         run: |
           set -euo pipefail
           body=$(curl -fsS --retry 5 --retry-delay 3 \
-            "https://${PROJECT_REF}.supabase.co/functions/v1/health")
+            "https://${PROJECT_REF}.supabase.co/functions/v1/health?token=${HEALTH_TOKEN}")
           echo "$body"
           echo "$body" | grep -q '"status":"healthy"'
           echo "$body" | grep -q '"database":"ok"'
