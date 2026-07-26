@@ -729,6 +729,7 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
             <div key={row.study_id} className="cohort-row" data-tone={tone}
               role={!isDemo ? 'button' : undefined}
               tabIndex={!isDemo ? 0 : undefined}
+              aria-label={!isDemo ? `檢視 ${row.study_id} 病人詳情` : undefined}
               style={{ cursor: !isDemo ? 'pointer' : undefined }}
               onClick={!isDemo ? () => navigate(`/lookup/${row.study_id}`) : undefined}
               onKeyDown={!isDemo ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/lookup/${row.study_id}`); } } : undefined}

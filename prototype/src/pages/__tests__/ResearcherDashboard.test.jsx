@@ -50,4 +50,23 @@ describe('ResearcherDashboard — cohort row navigation', () => {
     fireEvent.click(idCell.closest('.cohort-row'));
     await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/lookup/HSF-001'));
   });
+
+  it('點列內的撰寫手術紀錄按鈕只導覽到手術紀錄，不觸發列導覽', async () => {
+    const client = createTestQueryClient();
+    render(
+      <MemoryRouter initialEntries={['/researcher']}>
+        <QueryClientProvider client={client}>
+          <Routes>
+            <Route path="/researcher" element={<ResearcherDashboard onNavigate={() => {}} isDemo={false} userInfo={{ role: 'pi' }} onLogout={() => {}} />} />
+            <Route path="/lookup/:studyId" element={<LocationProbe />} />
+            <Route path="/surgical-record/:studyId" element={<LocationProbe />} />
+          </Routes>
+        </QueryClientProvider>
+      </MemoryRouter>
+    );
+    const recordBtn = await screen.findByRole('button', { name: '撰寫 HSF-001 手術紀錄' });
+    fireEvent.click(recordBtn);
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/surgical-record/HSF-001'));
+    expect(screen.getByTestId('loc')).not.toHaveTextContent('/lookup/HSF-001');
+  });
 });
