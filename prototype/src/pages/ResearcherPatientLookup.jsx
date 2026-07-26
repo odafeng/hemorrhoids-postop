@@ -1,10 +1,12 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import * as sb from '../utils/supabaseService';
 import * as I from '../components/Icons';
+import { isWoundNormal, formatWound } from '../utils/schemaContract';
 
 export default function ResearcherPatientLookup({ onNavigate, isDemo }) {
   const navigate = useNavigate();
+  const { studyId: routeStudyId } = useParams();
   const [query, setQuery] = useState('');
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -38,9 +40,7 @@ export default function ResearcherPatientLookup({ onNavigate, isDemo }) {
 
   const closeSignature = () => { setSigUrl(null); setSigError(''); };
 
-  const handleLookup = async (e) => {
-    e.preventDefault();
-    const studyId = query.trim();
+  const runLookup = async (studyId) => {
     if (!studyId) return;
     setLoading(true); setError(''); setResult(null); setSigUrl(null); setSigError('');
     try {
@@ -63,6 +63,7 @@ export default function ResearcherPatientLookup({ onNavigate, isDemo }) {
         patientExists: !!patient,
         patient,
         pod,
+        reports,                       // ← 新增：整份逐日原始列
         totalReports: reports.length,
         latestReportDate: latestReport?.report_date || null,
         latestReportPain: latestReport?.pain_nrs ?? null,
@@ -76,6 +77,13 @@ export default function ResearcherPatientLookup({ onNavigate, isDemo }) {
       setLoading(false);
     }
   };
+
+  const handleLookup = (e) => { e.preventDefault(); runLookup(query.trim()); };
+
+  useEffect(() => {
+    if (routeStudyId) { setQuery(routeStudyId); runLookup(routeStudyId); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeStudyId]);
 
   return (
     <div className="page">
@@ -210,6 +218,59 @@ export default function ResearcherPatientLookup({ onNavigate, isDemo }) {
             )}
           </div>
 
+          {result.patientExists && result.reports.length > 0 && (
+            <PatientPainTrend reports={result.reports} />
+          )}
+
+          {result.patientExists && (
+            <>
+              <div className="card-kicker" style={{ margin: '18px 4px 10px' }}>
+                DAILY REPORTS · {result.reports.length}
+              </div>
+              {result.reports.length === 0 ? (
+                <div className="card" style={{ textAlign: 'center', color: 'var(--ink-3)', fontSize: 12.5 }}>
+                  尚無回報紀錄
+                </div>
+              ) : (
+                result.reports.map((r) => {
+                  const pain = r.pain_nrs;
+                  const hasAlert = pain >= 8 || r.bleeding === '持續' || r.bleeding === '血塊' || r.fever || r.urinary === '尿不出來' || r.continence === '失禁';
+                  const concerning = !hasAlert && pain >= 5;
+                  const painTone = pain == null ? '' : pain <= 3 ? 'ok' : pain <= 6 ? 'warn' : 'danger';
+                  return (
+                    <div key={r.report_date} className={`tl-item ${hasAlert ? 'alert' : concerning ? 'warn' : 'ok'}`}>
+                      <div className="tl-date">{r.pod != null ? `POD ${r.pod}` : '—'} · {r.report_date}</div>
+                      <div className="card" style={{ marginBottom: 0 }}>
+                        <div className="sym-list">
+                          <div className="sym-row"><span className="sym-name">疼痛</span>
+                            <span className={`sym-val ${painTone}`}>{pain}<span className="unit">/10</span></span></div>
+                          <div className="sym-row"><span className="sym-name">出血</span>
+                            <span className={`sym-val ${r.bleeding === '持續' || r.bleeding === '血塊' ? 'danger' : r.bleeding === '少量' ? 'warn' : 'ok'}`}>{r.bleeding}</span></div>
+                          <div className="sym-row"><span className="sym-name">排便</span>
+                            <span className={`sym-val ${r.bowel === '未排' || r.bowel === '困難' ? 'warn' : 'ok'}`}>{r.bowel}</span></div>
+                          {r.fever && (
+                            <div className="sym-row"><span className="sym-name">發燒</span>
+                              <span className="sym-val danger">是</span></div>
+                          )}
+                          <div className="sym-row"><span className="sym-name">傷口</span>
+                            <span className={`sym-val ${isWoundNormal(r.wound) ? 'ok' : 'warn'}`}>{formatWound(r.wound)}</span></div>
+                          {r.urinary && r.urinary !== '正常' && (
+                            <div className="sym-row"><span className="sym-name">排尿</span>
+                              <span className={`sym-val ${r.urinary === '尿不出來' ? 'danger' : 'warn'}`}>{r.urinary}</span></div>
+                          )}
+                          {r.continence && r.continence !== '正常' && (
+                            <div className="sym-row"><span className="sym-name">肛門控制</span>
+                              <span className={`sym-val ${r.continence === '失禁' ? 'danger' : 'warn'}`}>{r.continence}</span></div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </>
+          )}
+
           {sigError && (
             <div className="alert-banner danger" style={{ marginTop: 10 }}>
               <div className="al-icon"><I.Alert width={18} height={18} /></div>
@@ -342,6 +403,75 @@ export default function ResearcherPatientLookup({ onNavigate, isDemo }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function PatientPainTrend({ reports }) {
+  const [range, setRange] = useState(14);
+  const asc = [...reports].map(r => ({ pain: r.pain_nrs, date: r.report_date, pod: r.pod }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const shown = range > 0 ? asc.slice(-range) : asc;
+  if (shown.length === 0) return null;
+
+  const W = 360, H = 140, padX = 26, padY = 18;
+  const cW = W - padX * 2, cH = H - padY * 2;
+  const pts = shown.map((r, i) => ({
+    x: padX + (shown.length === 1 ? cW / 2 : (i / (shown.length - 1)) * cW),
+    y: padY + cH - (r.pain / 10) * cH,
+    pain: r.pain, date: r.date, pod: r.pod,
+  }));
+  const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+
+  return (
+    <div className="chart-card">
+      <div className="chart-head">
+        <div>
+          <div className="card-kicker" style={{ marginBottom: 2 }}>PAIN NRS TREND</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>疼痛分數趨勢</div>
+        </div>
+        <div className="range-row">
+          {[7, 14, 0].map((r) => (
+            <button key={r} className={`range-chip ${range === r ? 'on' : ''}`} onClick={() => setRange(r)}>
+              {r === 0 ? 'ALL' : `${r}D`}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="chart">
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <linearGradient id="painGradR" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.25" />
+              <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {[0, 2, 4, 6, 8, 10].map((v) => {
+            const y = padY + cH - (v / 10) * cH;
+            return (
+              <g key={v}>
+                <line x1={padX} y1={y} x2={W - padX} y2={y} stroke="var(--chart-grid)" strokeWidth="1" strokeDasharray={v === 0 || v === 10 ? '' : '2 3'} />
+                <text x={padX - 6} y={y + 3} fill="var(--ink-3)" fontSize="9" textAnchor="end" fontFamily="var(--font-mono)">{v}</text>
+              </g>
+            );
+          })}
+          {pts.length > 1 && (
+            <>
+              <path d={`${path} L ${pts[pts.length - 1].x} ${padY + cH} L ${pts[0].x} ${padY + cH} Z`} fill="url(#painGradR)" />
+              <path d={path} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </>
+          )}
+          {pts.map((p, i) => (
+            <circle key={i} cx={p.x} cy={p.y} r="3.5" fill="var(--surface)"
+              stroke={p.pain >= 7 ? 'var(--danger)' : p.pain >= 4 ? 'var(--warn)' : 'var(--ok)'} strokeWidth="2" />
+          ))}
+          {pts.filter((_, i) => i === 0 || i === pts.length - 1 || i === Math.floor(pts.length / 2)).map((p, i) => (
+            <text key={`pod-${i}`} x={p.x} y={H - 4} fill="var(--ink-3)" fontSize="9" textAnchor="middle" fontFamily="var(--font-mono)">
+              {p.pod != null ? `POD ${p.pod}` : p.date.slice(5)}
+            </text>
+          ))}
+        </svg>
+      </div>
     </div>
   );
 }

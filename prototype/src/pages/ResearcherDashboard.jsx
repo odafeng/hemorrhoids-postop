@@ -726,7 +726,14 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
           const tone = statusTone(row);
           const podLabel = row._pod === null ? '—' : row._pod === 0 ? 'OP' : `POD ${row._pod}`;
           return (
-            <div key={row.study_id} className="cohort-row" data-tone={tone}>
+            <div key={row.study_id} className="cohort-row" data-tone={tone}
+              role={!isDemo ? 'button' : undefined}
+              tabIndex={!isDemo ? 0 : undefined}
+              aria-label={!isDemo ? `檢視 ${row.study_id} 病人詳情` : undefined}
+              style={{ cursor: !isDemo ? 'pointer' : undefined }}
+              onClick={!isDemo ? () => navigate(`/lookup/${row.study_id}`) : undefined}
+              onKeyDown={!isDemo ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/lookup/${row.study_id}`); } } : undefined}
+            >
               <div className="cr-id">{row.study_id}</div>
               <div className="cr-meta">
                 <span>{podLabel}</span>
@@ -741,7 +748,7 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
               <div className="cr-last">{row.adherence_pct ?? 0}%</div>
               {!isDemo && (
                 <button type="button"
-                  onClick={() => navigate(`/surgical-record/${row.study_id}`)}
+                  onClick={(e) => { e.stopPropagation(); navigate(`/surgical-record/${row.study_id}`); }}
                   aria-label={`撰寫 ${row.study_id} 手術紀錄`}
                   title="撰寫手術紀錄"
                   style={{

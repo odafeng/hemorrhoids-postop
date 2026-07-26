@@ -303,6 +303,9 @@ export default function App() {
         <Route path="/lookup" element={<ResearcherPatientLookup onNavigate={(tab) => {
           navigate(tab === 'researcherDashboard' ? '/researcher' : '/lookup');
         }} {...commonProps} />} />
+        <Route path="/lookup/:studyId" element={<ResearcherPatientLookup onNavigate={(tab) => {
+          navigate(tab === 'researcherDashboard' ? '/researcher' : '/lookup');
+        }} {...commonProps} />} />
         <Route path="/review" element={<ChatReview onNavigate={(tab) => {
           navigate(tab === 'researcherDashboard' ? '/researcher' : '/review');
         }} {...commonProps} />} />
