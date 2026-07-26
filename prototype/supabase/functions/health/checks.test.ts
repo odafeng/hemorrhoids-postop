@@ -75,6 +75,20 @@ Deno.test("anthropic key present but call fails (credit exhausted) -> degraded",
   assert.ok(r.checks.anthropic.startsWith("error"));
 });
 
+Deno.test("anthropic error surfaces the API message (for actionable alerts)", async () => {
+  const { deps } = baseDeps({
+    routes: {
+      anthropic: () =>
+        new Response(JSON.stringify({ error: { message: "credit balance is too low" } }), {
+          status: 400,
+        }),
+      openai: () => new Response("{}", { status: 200 }),
+    },
+  });
+  const r = await runHealthChecks(deps);
+  assert.ok(r.checks.anthropic.includes("credit balance is too low"));
+});
+
 Deno.test("database unreachable -> degraded", async () => {
   const { deps } = baseDeps({
     dbCount: () => Promise.resolve({ count: null, error: new Error("connection refused") }),

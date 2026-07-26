@@ -36,7 +36,16 @@ async function checkAnthropic(deps: HealthDeps): Promise<string> {
         messages: [{ role: "user", content: "ping" }],
       }),
     });
-    return res.ok ? "ok" : `error: HTTP ${res.status}`;
+    if (res.ok) return "ok";
+    // Surface the API's own message (e.g. "credit balance is too low") so the
+    // alert is actionable — HTTP 400 alone can't tell a bad payload from an
+    // exhausted account.
+    let detail = "";
+    try {
+      const j = await res.json();
+      detail = typeof j?.error?.message === "string" ? j.error.message : "";
+    } catch { /* non-JSON body */ }
+    return detail ? `error: HTTP ${res.status} – ${detail.slice(0, 140)}` : `error: HTTP ${res.status}`;
   } catch (e) {
     return `error: ${msg(e)}`;
   }
