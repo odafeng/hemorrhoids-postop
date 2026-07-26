@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as sb from '../utils/supabaseService';
 import * as I from '../components/Icons';
+import { isWoundNormal, formatWound } from '../utils/schemaContract';
 
 export default function ResearcherPatientLookup({ onNavigate, isDemo }) {
   const navigate = useNavigate();
@@ -63,6 +64,7 @@ export default function ResearcherPatientLookup({ onNavigate, isDemo }) {
         patientExists: !!patient,
         patient,
         pod,
+        reports,                       // ← 新增：整份逐日原始列
         totalReports: reports.length,
         latestReportDate: latestReport?.report_date || null,
         latestReportPain: latestReport?.pain_nrs ?? null,
@@ -209,6 +211,55 @@ export default function ResearcherPatientLookup({ onNavigate, isDemo }) {
               </div>
             )}
           </div>
+
+          {result.patientExists && (
+            <>
+              <div className="card-kicker" style={{ margin: '18px 4px 10px' }}>
+                DAILY REPORTS · {result.reports.length}
+              </div>
+              {result.reports.length === 0 ? (
+                <div className="card" style={{ textAlign: 'center', color: 'var(--ink-3)', fontSize: 12.5 }}>
+                  尚無回報紀錄
+                </div>
+              ) : (
+                result.reports.map((r) => {
+                  const pain = r.pain_nrs;
+                  const hasAlert = pain >= 8 || r.bleeding === '持續' || r.bleeding === '血塊' || r.fever || r.urinary === '尿不出來' || r.continence === '失禁';
+                  const concerning = !hasAlert && pain >= 5;
+                  const painTone = pain == null ? '' : pain <= 3 ? 'ok' : pain <= 6 ? 'warn' : 'danger';
+                  return (
+                    <div key={r.report_date} className={`tl-item ${hasAlert ? 'alert' : concerning ? 'warn' : 'ok'}`}>
+                      <div className="tl-date">{r.pod != null ? `POD ${r.pod}` : '—'} · {r.report_date}</div>
+                      <div className="card" style={{ marginBottom: 0 }}>
+                        <div className="sym-list">
+                          <div className="sym-row"><span className="sym-name">疼痛</span>
+                            <span className={`sym-val ${painTone}`}>{pain}<span className="unit">/10</span></span></div>
+                          <div className="sym-row"><span className="sym-name">出血</span>
+                            <span className={`sym-val ${r.bleeding === '持續' || r.bleeding === '血塊' ? 'danger' : r.bleeding === '少量' ? 'warn' : 'ok'}`}>{r.bleeding}</span></div>
+                          <div className="sym-row"><span className="sym-name">排便</span>
+                            <span className={`sym-val ${r.bowel === '未排' || r.bowel === '困難' ? 'warn' : 'ok'}`}>{r.bowel}</span></div>
+                          {r.fever && (
+                            <div className="sym-row"><span className="sym-name">發燒</span>
+                              <span className="sym-val danger">是</span></div>
+                          )}
+                          <div className="sym-row"><span className="sym-name">傷口</span>
+                            <span className={`sym-val ${isWoundNormal(r.wound) ? 'ok' : 'warn'}`}>{formatWound(r.wound)}</span></div>
+                          {r.urinary && r.urinary !== '正常' && (
+                            <div className="sym-row"><span className="sym-name">排尿</span>
+                              <span className={`sym-val ${r.urinary === '尿不出來' ? 'danger' : 'warn'}`}>{r.urinary}</span></div>
+                          )}
+                          {r.continence && r.continence !== '正常' && (
+                            <div className="sym-row"><span className="sym-name">肛門控制</span>
+                              <span className={`sym-val ${r.continence === '失禁' ? 'danger' : 'warn'}`}>{r.continence}</span></div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </>
+          )}
 
           {sigError && (
             <div className="alert-banner danger" style={{ marginTop: 10 }}>
