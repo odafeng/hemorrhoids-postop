@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
-import { TestQueryWrapper } from '../../test-utils';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { TestQueryWrapper, createTestQueryClient } from '../../test-utils';
 import ResearcherPatientLookup from '../ResearcherPatientLookup';
 
 vi.mock('../../utils/supabaseService', () => ({
@@ -56,5 +58,21 @@ describe('ResearcherPatientLookup — 逐日明細', () => {
     fireEvent.click(screen.getByRole('button', { name: /查詢/ }));
     await waitFor(() => expect(screen.getByText(/疼痛分數趨勢/)).toBeInTheDocument());
     expect(container.querySelector('svg')).toBeInTheDocument();
+  });
+
+  it('用 /lookup/:studyId 進入時自動載入該病人', async () => {
+    sb.getAllReports.mockResolvedValue(TWO_REPORTS);
+    const client = createTestQueryClient();
+    render(
+      <MemoryRouter initialEntries={['/lookup/HSF-001']}>
+        <QueryClientProvider client={client}>
+          <Routes>
+            <Route path="/lookup/:studyId" element={<ResearcherPatientLookup onNavigate={() => {}} isDemo={false} />} />
+          </Routes>
+        </QueryClientProvider>
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(screen.getByText(/POD 2 · 2026-07-26/)).toBeInTheDocument());
+    expect(sb.getPatient).toHaveBeenCalledWith('HSF-001');
   });
 });

@@ -1,11 +1,12 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import * as sb from '../utils/supabaseService';
 import * as I from '../components/Icons';
 import { isWoundNormal, formatWound } from '../utils/schemaContract';
 
 export default function ResearcherPatientLookup({ onNavigate, isDemo }) {
   const navigate = useNavigate();
+  const { studyId: routeStudyId } = useParams();
   const [query, setQuery] = useState('');
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -39,9 +40,7 @@ export default function ResearcherPatientLookup({ onNavigate, isDemo }) {
 
   const closeSignature = () => { setSigUrl(null); setSigError(''); };
 
-  const handleLookup = async (e) => {
-    e.preventDefault();
-    const studyId = query.trim();
+  const runLookup = async (studyId) => {
     if (!studyId) return;
     setLoading(true); setError(''); setResult(null); setSigUrl(null); setSigError('');
     try {
@@ -78,6 +77,13 @@ export default function ResearcherPatientLookup({ onNavigate, isDemo }) {
       setLoading(false);
     }
   };
+
+  const handleLookup = (e) => { e.preventDefault(); runLookup(query.trim()); };
+
+  useEffect(() => {
+    if (routeStudyId) { setQuery(routeStudyId); runLookup(routeStudyId); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeStudyId]);
 
   return (
     <div className="page">
