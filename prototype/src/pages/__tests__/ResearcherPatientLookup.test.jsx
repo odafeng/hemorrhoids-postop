@@ -48,4 +48,13 @@ describe('ResearcherPatientLookup — 逐日明細', () => {
     await lookup();
     await waitFor(() => expect(screen.getByText('尚無回報紀錄')).toBeInTheDocument());
   });
+
+  it('查到病人後渲染疼痛趨勢圖（SVG）與標題', async () => {
+    sb.getAllReports.mockResolvedValue(TWO_REPORTS);
+    const { container } = render(<ResearcherPatientLookup onNavigate={() => {}} isDemo={false} />, { wrapper: TestQueryWrapper });
+    fireEvent.change(screen.getByPlaceholderText(/搜尋病人編號/), { target: { value: 'HSF-001' } });
+    fireEvent.click(screen.getByRole('button', { name: /查詢/ }));
+    await waitFor(() => expect(screen.getByText(/疼痛分數趨勢/)).toBeInTheDocument());
+    expect(container.querySelector('svg')).toBeInTheDocument();
+  });
 });
