@@ -8,6 +8,8 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.js'],
     globals: true,
     css: true,
-    exclude: ['e2e/**', 'node_modules/**'],
+    // supabase/** holds Deno Edge Function code + its Deno tests (run via `deno test`).
+    // Keep them out of vitest, which runs in Node and has no `Deno` global.
+    exclude: ['e2e/**', 'node_modules/**', 'supabase/**'],
   },
 });
