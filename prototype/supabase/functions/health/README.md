@@ -1,54 +1,53 @@
 # `health` — ai-chat uptime probe
 
 Active liveness check for the ai-chat dependency chain. Returns `200` healthy /
-`503` degraded. Probed every ~5 min by `.github/workflows/uptime.yml`, which
-reports to Healthchecks.io for phone alerting + a dead man's switch.
+`503` degraded. Probed by a **Better Stack** uptime monitor that hits the
+token-gated endpoint directly and alerts the PI's phone.
 
 Design: `docs/superpowers/specs/2026-07-26-ai-chat-uptime-monitoring-design.md`
+
+> **History:** originally probed by a GitHub Actions `*/5` cron reporting to
+> Healthchecks.io. GitHub throttled the cron to ~29-min actual cadence, so HC's
+> 5-min dead man's switch flapped UP/DOWN constantly. Switched to Better Stack
+> (active prober, not cron-driven) on 2026-07-26.
 
 ## What it checks
 
 | Check | How | Fatal? |
 |-------|-----|--------|
-| Anthropic | `max_tokens:1` canary with the same `CLAUDE_API_KEY` ai-chat uses — catches **credit exhaustion** and revoked keys, not just a missing env var | yes |
+| Anthropic | `max_tokens:1` canary with the same `CLAUDE_API_KEY` ai-chat uses — catches **credit/usage-limit exhaustion** and revoked keys, not just a missing env var | yes |
 | Supabase DB | `count` on `rag_documents` (no PII echoed) | yes |
 | OpenAI | `GET /v1/models` — a bad key only degrades RAG, so it is a warning | no |
 | VAPID | presence only (informational) | no |
 
-Response body: `{ status, latency_ms, checks, timestamp }`. Never echoes key
-values or patient data.
+Non-2xx (i.e. `503`) plus the per-check detail lets the monitor alert with an
+actionable reason. Response body never echoes key values or patient data.
 
-## Setup (operator steps — not done automatically)
+## Setup (operator steps)
 
-1. **Set the function secrets** (Supabase → Edge Functions → Secrets):
-   - `HEALTH_TOKEN` — a random string. Once set, callers must pass `?token=<value>`;
-     unauthenticated callers get `401` **before** any paid Anthropic call runs.
-   - (`CLAUDE_API_KEY`, `OPENAI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
-     already exist for ai-chat.)
-
-2. **Deploy the function** (additive; does not touch ai-chat):
+1. **Supabase secret** `HEALTH_TOKEN` (done): a random string. Callers must pass
+   `?token=<value>`; unauthenticated callers get `401` before any paid canary runs.
+2. **Deploy** (done, additive; does not touch ai-chat):
    ```sh
    supabase functions deploy health --no-verify-jwt
    ```
-
-3. **Create a Healthchecks.io check**: period 5 min, grace 6–8 min. Copy its
-   ping URL (`https://hc-ping.com/<uuid>`). Wire its Integrations to **ntfy**
-   (or the HC app / email) so alerts reach the PI's phone.
-
-4. **Set the GitHub Actions secrets** (repo → Settings → Secrets → Actions):
-   - `HEALTH_TOKEN` — same value as step 1.
-   - `HC_PING_URL` — the Healthchecks.io ping URL from step 3.
-   - `SUPABASE_URL` — already configured.
+3. **Better Stack monitor**:
+   - Type: HTTP(S) uptime monitor.
+   - URL: `https://<project-ref>.supabase.co/functions/v1/health?token=<HEALTH_TOKEN>`
+   - Frequency: as low as the plan allows (free ≈ 3 min — already ~10× GitHub's
+     throttled cadence).
+   - Down condition: any non-2xx (the endpoint returns `503` when degraded).
+   - Alerts: Better Stack app push / email (or webhook to ntfy).
+   - Keep the monitor + any status page **private** so the token'd URL is not exposed.
 
 ## Verify
 
 - **Locally**: `deno test supabase/functions/health/checks.test.ts` (logic, no network).
-- **End to end**: run the `Uptime Monitor` workflow via *Run workflow*
-  (`workflow_dispatch`) → Healthchecks.io shows a ping and goes "up".
-- **Alert path**: temporarily set the GitHub `HEALTH_TOKEN` secret to a wrong
-  value → the probe gets `401`/`503` → HC `/fail` → **phone alert**. Restore after.
+- **Live**: `curl "<url>?token=<token>"` → `200` healthy; without token → `401`.
+- **Alert path**: point Better Stack at a wrong token briefly → it sees `401`/down →
+  phone alert. Restore after.
 
 ## Cost
 
-The Anthropic canary is `max_tokens:1` (~$0.00002/call) → about **$0.2–0.4/month**
-at a 5-min cadence. GitHub Actions minutes are free (public repo).
+The Anthropic canary is `max_tokens:1` (~$0.00002/call) → a few cents/month even
+at a 1–3 min cadence.

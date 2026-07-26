@@ -1,7 +1,10 @@
 # AI-Chat Uptime 監控（health endpoint + 外部心跳）
 
 **日期**：2026-07-26
-**狀態**：設計待實作
+**狀態**：已實作。health 函式與 `HEALTH_TOKEN` 依此設計上線。**唯一偏離**：探針**不用**
+GitHub Actions cron + Healthchecks.io（GitHub 把 `*/5` 節流到 ~29 分，導致 HC dead man's
+switch 假性 flapping），改用 **Better Stack 主動探針**直打 token'd endpoint。詳見維運日誌
+2026-07-26「uptime 探針改用 Better Stack」。
 **背景需求**：ai-chat 是本研究的臨床介入，收案期間**不能默默斷線而無人察覺**。
 現行低流量 pilot（HSF-001 POD 2）無法靠「有沒有病人在用」判斷死活——沒人用是常態，
 不是故障。最陰險的失效是 **Anthropic 額度用完**：網站首頁照樣回 200，一按聊天就 500，
