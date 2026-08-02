@@ -219,6 +219,63 @@ describe('checkAlerts', () => {
     });
   });
 
+  // === Report-count vs calendar-day wording ===
+  // The engine counts consecutive *reports*, never consecutive dates. That is the
+  // right behaviour for this study — the follow-up schedule tapers (daily to POD 7,
+  // then every 2 days, then weekly), so non-adjacent reports are the designed norm
+  // and requiring adjacency would switch these safety alerts off for most of the
+  // 30-day window. What must not happen is the message claiming calendar days it
+  // never checked: HSF-001 reported soiling on POD 7 and POD 9 with nothing on
+  // POD 8, and the alert read "已連續 2 天出現滲便".
+  describe('回報次數 vs 日曆天數的措辭', () => {
+    const noDayClaim = /連續\s*\d+\s*天/;
+
+    it('滲便：跳過一天的兩次回報不得宣稱「連續 N 天」', () => {
+      const reports = [
+        makeReport({ date: '2026-07-31', continence: '滲便' }),
+        makeReport({ date: '2026-08-02', continence: '滲便' }),
+      ];
+      const alert = checkAlerts(reports).find(a => a.id === 'soiling');
+
+      expect(alert).toBeDefined();
+      expect(alert.message).not.toMatch(noDayClaim);
+      expect(alert.message).toContain('2026-07-31');
+      expect(alert.message).toContain('2026-08-02');
+    });
+
+    it('高度疼痛：跨越空缺日的三次回報不得宣稱「連續 N 天」', () => {
+      const reports = [
+        makeReport({ date: '2026-07-28', pain: 9 }),
+        makeReport({ date: '2026-07-30', pain: 9 }),
+        makeReport({ date: '2026-08-02', pain: 9 }),
+      ];
+      const alert = checkAlerts(reports).find(a => a.id === 'high_pain');
+
+      expect(alert).toBeDefined();
+      expect(alert.message).not.toMatch(noDayClaim);
+      expect(alert.message).toContain('2026-07-28');
+    });
+
+    it('未排便與排尿困難同樣不得宣稱天數', () => {
+      const reports = [
+        makeReport({ date: '2026-07-28', bowel: '未排', urinary: '困難' }),
+        makeReport({ date: '2026-07-30', bowel: '未排', urinary: '困難' }),
+        makeReport({ date: '2026-08-02', bowel: '未排', urinary: '困難' }),
+      ];
+      const alerts = checkAlerts(reports);
+
+      expect(alerts.find(a => a.id === 'no_bowel').message).not.toMatch(noDayClaim);
+      expect(alerts.find(a => a.id === 'urinary_difficulty').message).not.toMatch(noDayClaim);
+    });
+
+    it('真正連續的日子仍照常觸發（不得因措辭調整而失效）', () => {
+      const dates = makeConsecutiveDates(3);
+      const reports = dates.map(date => makeReport({ date, pain: 9 }));
+
+      expect(checkAlerts(reports).some(a => a.id === 'high_pain')).toBe(true);
+    });
+  });
+
   // === Multiple Alerts ===
   it('can trigger multiple alerts simultaneously', () => {
     const dates = makeConsecutiveDates(3);

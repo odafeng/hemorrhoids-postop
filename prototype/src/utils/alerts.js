@@ -2,6 +2,20 @@
 // Based on protocol: pain ≥ 8 for 3+ days, ascending pain 3+ days,
 // persistent bleeding 2+ consecutive, no bowel 3+ days, fever, urinary retention
 
+// Every streak rule below counts consecutive *reports*, not calendar days — and it
+// must stay that way: the follow-up schedule tapers (daily to POD 7, then every
+// 2 days, then weekly), so non-adjacent reports are the designed norm and requiring
+// date adjacency would switch these safety alerts off for most of the 30-day window.
+// The messages must therefore never claim calendar days. Stating the span makes any
+// gap visible to the clinician instead of implying it away: HSF-001 reported soiling
+// on POD 7 and POD 9 with nothing on POD 8, and the alert read "已連續 2 天".
+function reportSpan(reports, count) {
+  const window = reports.slice(0, count);
+  const newest = window[0].date;
+  const oldest = window[window.length - 1].date;
+  return oldest === newest ? oldest : `${oldest} 至 ${newest}`;
+}
+
 export function checkAlerts(reports) {
   const alerts = [];
   if (!reports || reports.length === 0) return alerts;
@@ -26,7 +40,7 @@ export function checkAlerts(reports) {
       type: 'danger',
       icon: '🔴',
       title: '持續性高度疼痛',
-      message: `疼痛分數 ≥ 8 已連續 ${consecutiveHighPain} 天，建議聯絡醫療機構或回診評估。`,
+      message: `已連續 ${consecutiveHighPain} 次回報疼痛分數 ≥ 8（${reportSpan(recentReports, consecutiveHighPain)}），建議聯絡醫療機構或回診評估。`,
     });
   }
 
@@ -61,7 +75,7 @@ export function checkAlerts(reports) {
       type: 'danger',
       icon: '🩸',
       title: '持續性出血',
-      message: `已連續 ${consecutivePersistentBleeding} 次回報持續性出血（排便後滴血、馬桶水變色），建議儘速聯絡醫療機構評估。`,
+      message: `已連續 ${consecutivePersistentBleeding} 次回報持續性出血（排便後滴血、馬桶水變色；${reportSpan(recentReports, consecutivePersistentBleeding)}），建議儘速聯絡醫療機構評估。`,
     });
   }
 
@@ -91,7 +105,7 @@ export function checkAlerts(reports) {
       type: 'warning',
       icon: '⚠️',
       title: '超過3天未排便',
-      message: `已連續 ${consecutiveNoBowel} 天未排便，建議聯絡醫療機構評估是否需要處置。`,
+      message: `已連續 ${consecutiveNoBowel} 次回報未排便（${reportSpan(recentReports, consecutiveNoBowel)}），建議聯絡醫療機構評估是否需要處置。`,
     });
   }
 
@@ -133,7 +147,7 @@ export function checkAlerts(reports) {
         type: 'warning',
         icon: '⚠️',
         title: '排尿困難',
-        message: `已連續 ${consecutiveUrinaryDifficulty} 天排尿困難，建議聯絡醫療機構評估。`,
+        message: `已連續 ${consecutiveUrinaryDifficulty} 次回報排尿困難（${reportSpan(recentReports, consecutiveUrinaryDifficulty)}），建議聯絡醫療機構評估。`,
       });
     }
   }
@@ -165,7 +179,7 @@ export function checkAlerts(reports) {
         type: 'warning',
         icon: '⚠️',
         title: '持續滲便',
-        message: `已連續 ${consecutiveSoiling} 天出現滲便，建議聯絡醫療機構評估。`,
+        message: `已連續 ${consecutiveSoiling} 次回報出現滲漏（${reportSpan(recentReports, consecutiveSoiling)}），建議聯絡醫療機構評估。`,
       });
     }
   }
