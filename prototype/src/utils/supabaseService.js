@@ -751,6 +751,11 @@ export async function getAllChatsForResearcher() {
   const { data, error } = await supabase
     .from('ai_chat_logs')
     .select('*')
+    // Unreviewed first (false sorts before true), so the 200-row cap can only ever
+    // trim already-reviewed history. Sorting by created_at alone pushed the OLDEST
+    // rows out of the window once the table passed 200 — exactly the ones waiting
+    // longest for review, silently shrinking the study's AI-quality safety net.
+    .order('reviewed', { ascending: true })
     .order('created_at', { ascending: false })
     .limit(200);
   if (error) return [];
