@@ -50,6 +50,16 @@ findings:
     resolution: alerts 改為 EXISTS 子查詢；分母改依協定排程並以術後經過天數為基準
     incidental_finding: 磁碟上 20260326060000_protocol_adherence.sql 早已實作協定式分母但從未套用至 prod（migration 歷史錯位），且同樣帶有扇出缺陷
 
+  - id: 4
+    title: 每日提醒推播與同意之追蹤排程不一致
+    category: protocol_adherence
+    severity: moderate
+    detail:
+      - check-adherence 對 POD 0–30 每日推播提醒，未區分是否為回報日
+      - 受試者於非回報日仍被提醒填寫，與同意書所載頻率不符，且可能影響留存率
+    resolution: 改為僅於回報日提醒；排程改由資料庫函式 fn_report_days() 提供，Edge Function 啟動時取一次
+    design_note: 今日已因「同一規則存在兩處實作」產生兩個缺陷，故不於 TypeScript 再寫第三份；fn_expected_reports 亦改建於同一函式之上，使提醒排程與依從率分母不可能分歧
+
 decisions:
   - id: 1
     topic: 追蹤排程之權威定義
@@ -57,7 +67,7 @@ decisions:
     encoded_as: POD 0–7（8 次）→ POD 9/11/13（3 次）→ POD 20/27（2 次），30 天共 13 次
     by: 主持人
     note: 同意書載「第 15–30 天每週 1–2 次」，本定義取其保守端，仍在同意範圍內
-    open_issue: check-adherence 排程函式目前對 POD 0–30 每日推播提醒，與此排程不一致，待處置
+    single_source: fn_report_days()；依從率分母與每日提醒推播均由此衍生
 
   - id: 2
     topic: 止痛方案資料之取得方式
@@ -72,12 +82,18 @@ decisions:
     by: 主持人
 
 follow_ups:
-  - 向 HSF-001 確認 POD 7、POD 9 之實際情況，更正／註記該 2 列
-  - 與 IRB 辦公室確認題項措辭釐清是否需提修正案（未新增題項、未增加受試者負擔）
-  - 紙本 CRF 表單二第 4 項仍為修正前措辭，與 App 不一致，需同步並考量版本號變更
-  - 紙本 CRF 表單一「手術方式」僅列 LigaSure 與 Laser，無傳統 closed hemorrhoidectomy 選項
-  - patients 表之 年齡／性別／BMI 為空值，須由研究人員補填
-  - check-adherence 每日提醒與遞減排程不一致，待決定處置
+  # 主持人於 2026-08-02 當日回報下列已處理
+  - item: 向 HSF-001 確認 POD 7、POD 9 之實際情況，更正／註記該 2 列
+    status: 主持人回報已處理
+  - item: 與 IRB 辦公室確認題項措辭釐清是否需提修正案（未新增題項、未增加受試者負擔）
+    status: 主持人回報已處理
+  - item: patients 表之 年齡／性別／BMI 為空值，須由研究人員補填
+    status: 主持人回報已處理
+  # 仍待處理
+  - item: 紙本 CRF 表單二第 4 項仍為修正前措辭，與 App 不一致，需同步並考量版本號變更
+    status: open
+  - item: 紙本 CRF 表單一「手術方式」僅列 LigaSure 與 Laser，無傳統 closed hemorrhoidectomy 選項
+    status: open
 
 artifacts:
   - path: 收案文件/個案報告表_CRF紀錄.xlsx

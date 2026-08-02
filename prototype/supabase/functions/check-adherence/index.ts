@@ -5,6 +5,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { sendPushToMany } from "../_shared/web-push.ts";
+import { patientsDueForReminder } from "./schedule.ts";
 
 Deno.serve(async (req: Request) => {
   // Only allow POST with a secret key (from GitHub Actions)
@@ -44,10 +45,24 @@ Deno.serve(async (req: Request) => {
     let reminded = 0;
     let pushed = 0;
     let pushFailed = 0;
-    let skipped = 0;
     const expiredEndpoints: string[] = [];
 
-    for (const patient of patients || []) {
+    // The consented schedule (第一週每日、第二週每兩日一次、第三週起每週一次) lives in
+    // fn_report_days(); fetching it keeps this function from carrying a second copy.
+    // Throw rather than default to every-day or no-day: silently reminding on the wrong
+    // days is what this change exists to stop, and silently reminding nobody would
+    // disable the follow-up nudge without anything surfacing it.
+    const { data: reportDayRows, error: reportDaysError } = await adminClient
+      .rpc("fn_report_days");
+    if (reportDaysError) throw reportDaysError;
+    const reportDays = new Set<number>((reportDayRows ?? []).map(Number));
+    if (reportDays.size === 0) throw new Error("fn_report_days() returned no report days");
+
+    const due = patientsDueForReminder(patients || [], today, reportDays);
+    // Everyone not due today is skipped before any per-patient query runs.
+    let skipped = (patients?.length ?? 0) - due.length;
+
+    for (const patient of due) {
       // Check if patient reported today
       const { data: report } = await adminClient
         .from("symptom_reports")
@@ -75,17 +90,7 @@ Deno.serve(async (req: Request) => {
         continue; // Already notified
       }
 
-      // Calculate POD
-      const surgeryDate = new Date(patient.surgery_date);
-      const todayDate = new Date(today);
-      const pod = Math.floor((todayDate.getTime() - surgeryDate.getTime()) / (1000 * 60 * 60 * 24));
-
-      // Only remind POD 0-30
-      if (pod < 0 || pod > 30) {
-        skipped++;
-        continue;
-      }
-
+      const pod = patient.pod;
       const title = "術後追蹤提醒 🏥";
       const podLabel = pod === 0 ? "手術當日" : `POD ${pod}`;
       const message = `您今天（${podLabel}）尚未填寫症狀回報，請花 30 秒完成填寫。`;
