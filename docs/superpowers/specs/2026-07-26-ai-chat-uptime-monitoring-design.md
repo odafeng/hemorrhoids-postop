@@ -5,6 +5,11 @@
 GitHub Actions cron + Healthchecks.io（GitHub 把 `*/5` 節流到 ~29 分，導致 HC dead man's
 switch 假性 flapping），改用 **Better Stack 主動探針**直打 token'd endpoint。詳見維運日誌
 2026-07-26「uptime 探針改用 Better Stack」。
+
+**第二次偏離（2026-08-02）**：canary 改計費到獨立的 `HEALTH_CLAUDE_API_KEY`，並新增免費的
+`chat_key` 檢查。本設計原本刻意讓 canary 與 ai-chat 共用金鑰，但實務上這讓 Anthropic console
+的探針花費與病人使用花費無法區分——收案期間看到帳單有金額，第一直覺會是「有病人在用」，實際
+是監控自己。詳見維運日誌 2026-08-02。
 **背景需求**：ai-chat 是本研究的臨床介入，收案期間**不能默默斷線而無人察覺**。
 現行低流量 pilot（HSF-001 POD 2）無法靠「有沒有病人在用」判斷死活——沒人用是常態，
 不是故障。最陰險的失效是 **Anthropic 額度用完**：網站首頁照樣回 200，一按聊天就 500，
@@ -41,7 +46,10 @@ switch 假性 flapping），改用 **Better Stack 主動探針**直打 token'd e
 - 並行執行三項檢查：
   - **Anthropic（致命）**：`POST /v1/messages`，`claude-haiku-4-5-20251001`，
     `max_tokens: 1`，極小 prompt。真的走一次生成 → **會撞到額度耗盡**（成本趨近於零，
-    約每次 $0.00002）。
+    約每次 $0.00002）。*（2026-08-02 起計費到 `HEALTH_CLAUDE_API_KEY`；額度耗盡是組織層級，
+    同組織的第二把金鑰仍抓得到。）*
+  - **chat_key（致命，2026-08-02 新增）**：`GET /v1/models` 帶 `CLAUDE_API_KEY`。需認證但
+    **零 token 費用**，補回「拆金鑰後測不到 chat 金鑰被撤銷」的缺口。
   - **Supabase DB（致命）**：一個輕量查詢（`select 1` 或數 `rag_documents`）→ 驗
     DB 與 pgvector 可達。
   - **OpenAI（非致命）**：`GET /v1/models`（免費）→ embedding 金鑰失效只當 warning，
