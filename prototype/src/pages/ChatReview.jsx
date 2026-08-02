@@ -90,7 +90,9 @@ export default function ChatReview({ onNavigate, isDemo, userInfo }) {
       </div>
 
       <div className="page-head">
-        <div className="eyebrow">AI 衛教審核 · PAST 24H</div>
+        {/* Matches what getAllChatsForResearcher actually returns: every chat,
+            newest first, capped at 200 — not a 24-hour window. */}
+        <div className="eyebrow">AI 衛教審核 · 最近 200 則</div>
         <h1 className="page-title">AI 回覆審核</h1>
         <p className="page-sub">待審核 {unreviewed.length} 則 · 已審核 {reviewed.length} 則</p>
       </div>

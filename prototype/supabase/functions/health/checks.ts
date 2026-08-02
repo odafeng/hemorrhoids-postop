@@ -16,11 +16,15 @@ function msg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-// Anthropic canary: a real max_tokens:1 generation with the SAME key ai-chat uses.
-// Unlike a key-presence check, this catches an exhausted credit balance or a
-// revoked key — the failure modes that leave the site up but break the chat.
+// Anthropic canary: a real max_tokens:1 generation, which is what catches an
+// exhausted credit balance — the failure mode that leaves the site up but breaks
+// the chat. It bills HEALTH_CLAUDE_API_KEY when set, so the Anthropic console
+// separates ~940 probes/day of monitoring spend from real patient usage; without
+// that split, any non-zero bill looks like patients using the intervention.
+// Credit exhaustion is org-wide, so a same-org monitoring key still trips on it.
+// What the split *does* lose is a revoked chat key — checkChatKey covers that.
 async function checkAnthropic(deps: HealthDeps): Promise<string> {
-  const key = deps.getEnv("CLAUDE_API_KEY");
+  const key = deps.getEnv("HEALTH_CLAUDE_API_KEY") || deps.getEnv("CLAUDE_API_KEY");
   if (!key) return "missing";
   try {
     const res = await deps.fetch("https://api.anthropic.com/v1/messages", {
@@ -46,6 +50,24 @@ async function checkAnthropic(deps: HealthDeps): Promise<string> {
       detail = typeof j?.error?.message === "string" ? j.error.message : "";
     } catch { /* non-JSON body */ }
     return detail ? `error: HTTP ${res.status} – ${detail.slice(0, 140)}` : `error: HTTP ${res.status}`;
+  } catch (e) {
+    return `error: ${msg(e)}`;
+  }
+}
+
+// Validity probe for the key ai-chat itself uses. GET /v1/models is authenticated
+// but bills nothing, so this restores the revoked/invalid-key coverage that moving
+// the paid canary onto a separate key would otherwise have dropped. Fatal: a 401
+// here means the chat is dead no matter how healthy the canary looks.
+async function checkChatKey(deps: HealthDeps): Promise<string> {
+  const key = deps.getEnv("CLAUDE_API_KEY");
+  if (!key) return "missing";
+  try {
+    const res = await deps.fetch("https://api.anthropic.com/v1/models?limit=1", {
+      method: "GET",
+      headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
+    });
+    return res.ok ? "ok" : `error: HTTP ${res.status}`;
   } catch (e) {
     return `error: ${msg(e)}`;
   }
@@ -77,21 +99,26 @@ async function checkOpenAI(deps: HealthDeps): Promise<string> {
 }
 
 export async function runHealthChecks(deps: HealthDeps): Promise<HealthResult> {
-  const [anthropic, database, openai] = await Promise.all([
+  const [anthropic, chatKey, database, openai] = await Promise.all([
     checkAnthropic(deps),
+    checkChatKey(deps),
     checkDatabase(deps),
     checkOpenAI(deps),
   ]);
 
   const checks: Record<string, string> = {
     anthropic,
+    chat_key: chatKey,
     database,
     openai,
     vapid: deps.getEnv("VAPID_PUBLIC_KEY") ? "configured" : "missing",
   };
 
-  // Only Anthropic (generation) and the DB are fatal to the chat feature.
-  const status = anthropic === "ok" && database === "ok" ? "healthy" : "degraded";
+  // Fatal to the chat feature: generation (incl. credit balance), the key ai-chat
+  // signs with, and the DB. OpenAI embeddings degrade gracefully, so they are not.
+  const status = anthropic === "ok" && chatKey === "ok" && database === "ok"
+    ? "healthy"
+    : "degraded";
   return { status, checks };
 }
 

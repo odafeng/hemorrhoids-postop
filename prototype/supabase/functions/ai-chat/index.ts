@@ -6,6 +6,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { SYSTEM_PROMPT } from "./_prompt.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { createChatStream } from "./stream.ts";
 
 // Simple in-memory rate limiting (per edge instance)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -257,94 +258,30 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Stream SSE to client
-    const encoder = new TextEncoder();
-    let fullText = "";
-    let inputTokens = 0;
-    let outputTokens = 0;
-
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          const reader = response.body!.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop() || "";
-
-            for (const line of lines) {
-              if (!line.startsWith("data: ")) continue;
-              const jsonStr = line.slice(6).trim();
-              if (jsonStr === "[DONE]") continue;
-
-              try {
-                const event = JSON.parse(jsonStr);
-
-                // Content delta
-                if (event.type === "content_block_delta" && event.delta?.text) {
-                  fullText += event.delta.text;
-                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "delta", text: event.delta.text })}\n\n`));
-                }
-
-                // Usage from message_delta (final event)
-                if (event.type === "message_delta" && event.usage) {
-                  outputTokens = event.usage.output_tokens || 0;
-                }
-
-                // Usage from message_start
-                if (event.type === "message_start" && event.message?.usage) {
-                  inputTokens = event.message.usage.input_tokens || 0;
-                }
-              } catch {
-                // skip unparseable lines
-              }
-            }
-          }
-
-          // Send final event with metadata
-          const finalEvent = {
-            type: "done",
-            sources: ragSources.length > 0 ? ragSources : undefined,
+    // Stream SSE to client (relay logic lives in stream.ts so its failure paths
+    // are testable without a live Anthropic connection).
+    const stream = createChatStream(response.body!, {
+      model: MODEL,
+      ragSources,
+      logMetrics,
+      writeAudit: async ({ input, output }) => {
+        const adminClient = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+        );
+        await adminClient.from("audit_trail").insert({
+          actor_id: user.id,
+          actor_role: user.user_metadata?.role || "patient",
+          action: "ai.chat_request",
+          resource: "ai_chat_logs",
+          resource_id: user.user_metadata?.study_id || null,
+          detail: {
+            input_tokens: input,
+            output_tokens: output,
+            latency_ms: Date.now() - startTime,
             model: MODEL,
-          };
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalEvent)}\n\n`));
-          controller.close();
-
-          // Background: logging and audit (non-blocking)
-          logMetrics("success", undefined, { input: inputTokens, output: outputTokens }).catch(() => {});
-
-          try {
-            const adminClient = createClient(
-              Deno.env.get("SUPABASE_URL")!,
-              Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-            );
-            await adminClient.from("audit_trail").insert({
-              actor_id: user.id,
-              actor_role: user.user_metadata?.role || "patient",
-              action: "ai.chat_request",
-              resource: "ai_chat_logs",
-              resource_id: user.user_metadata?.study_id || null,
-              detail: {
-                input_tokens: inputTokens,
-                output_tokens: outputTokens,
-                latency_ms: Date.now() - startTime,
-                model: MODEL,
-              },
-            });
-          } catch (e) {
-            console.warn("Failed to write AI audit trail:", e);
-          }
-        } catch (streamErr) {
-          console.error("Stream error:", streamErr);
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", message: "Stream interrupted" })}\n\n`));
-          controller.close();
-        }
+          },
+        });
       },
     });
 

@@ -35,6 +35,26 @@ jobs:
       - name: Build production bundle
         run: npm run build
 
+  # Edge Function logic is Deno, so vitest deliberately excludes supabase/** (see
+  # vitest.config.js). Without this job those tests only ever ran on a developer's
+  # machine — including the ones guarding ai-chat, the clinical intervention.
+  edge-functions:
+    name: Deno tests (Edge Functions)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: prototype
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Run Edge Function tests
+        run: deno test supabase/functions/
+
   e2e:
     runs-on: ubuntu-latest
     needs: test
@@ -125,7 +145,9 @@ jobs:
   deploy-supabase:
     name: Deploy Supabase (functions + migrations)
     runs-on: ubuntu-latest
-    needs: [test, e2e]
+    # edge-functions gates this deliberately: it is the only job that exercises the
+    # Edge Function code this job uploads.
+    needs: [test, e2e, edge-functions]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     defaults:
       run:
