@@ -61,11 +61,14 @@ actionable reason. Response body never echoes key values or patient data.
    - Auth: send the token as request header `x-health-token: <HEALTH_TOKEN>` (preferred —
      keeps the secret out of URLs and request logs). The `?token=<HEALTH_TOKEN>` query
      param also works for backward compatibility.
-   - Frequency: **5 minutes**. Measured on 2026-08-02 the probe was running every
-     ~90s (234 invocations in 6h) — well past what a low-volume pilot needs, and
-     every probe is a billed Anthropic call. The design spec's own target is "pilot
-     可接受約 5 分鐘"; 5 min cuts the spend to a third with no meaningful loss of
-     detection speed at this enrolment volume.
+   - Frequency **and regions** — the endpoint load is `frequency × regions`, and the
+     regions are the bigger lever here. Measured 2026-08-02 (3h of edge logs, by
+     `cf_ipcountry`): US 32, SG 30, AU 30, DE 26 — **four regions each checking every
+     ~6 min**, so the endpoint sees a hit every ~92s and pays four Anthropic canary
+     calls per cycle. Per-region frequency is already about right; dropping to one or
+     two checking regions cuts the spend 2–4× with no loss of detection speed. Keep
+     multi-region *confirmation* (used only to verify a failure) if the plan separates
+     it from multi-region *checking* — confirmation costs nothing while healthy.
    - Down condition: any non-2xx (the endpoint returns `503` when degraded).
    - Alerts: Better Stack app push / email (or webhook to ntfy).
    - Keep the monitor + any status page **private** so the token'd URL is not exposed.
