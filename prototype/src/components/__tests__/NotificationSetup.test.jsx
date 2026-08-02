@@ -165,7 +165,13 @@ describe('NotificationSetup', () => {
       value: {
         ready: Promise.resolve({
           pushManager: {
-            getSubscription: vi.fn().mockResolvedValue({ endpoint: 'https://fcm.example' }),
+            // Deliberately slow: resolving immediately let the assertion below pass
+            // whether or not it waited for the subscribed state, so the ordering bug
+            // this test guards was only visible on a loaded CI runner. The delay makes
+            // that ordering deterministic here.
+            getSubscription: vi.fn().mockImplementation(
+              () => new Promise((r) => setTimeout(() => r({ endpoint: 'https://fcm.example' }), 40)),
+            ),
           },
         }),
       },
@@ -174,8 +180,12 @@ describe('NotificationSetup', () => {
 
     render(<NotificationSetup studyId="HEM-001" isDemo={false} />);
 
-    // Wait for pushStatus to settle to 'subscribed' before firing the button
-    await waitFor(() => expect(screen.getByText(/測試通知/)).toBeInTheDocument());
+    // Wait for pushStatus to actually reach 'subscribed'. The button renders before
+    // the getSubscription() promise resolves, so waiting on the button alone let the
+    // click land early on a loaded runner — the handler then takes its `no-sub`
+    // bail-out and sendTestPush is never called. '推播已開啟' only renders in the
+    // subscribed state, so it is the observable signal this test always meant to use.
+    await waitFor(() => expect(screen.getByText(/推播已開啟/)).toBeInTheDocument());
 
     fireEvent.click(screen.getByText(/測試通知/));
 
