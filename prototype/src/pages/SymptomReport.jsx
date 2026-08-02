@@ -18,7 +18,12 @@ const bleedingOptions = [
 const bowelOptions = ['正常', '困難', '未排'];
 const continenceOptions = [
   { v: '正常', label: '正常', d: '可以控制' },
-  { v: '滲便', label: '偶爾滲漏', d: '內褲有少量污漬、不自覺漏出' },
+  // Names stool explicitly. The previous wording ("內褲有少量污漬") captured any
+  // underwear staining, which after a haemorrhoidectomy is usually wound discharge —
+  // so discharge was being recorded here as a continence problem. The stored value is
+  // unchanged (`滲便`), so this sharpens the operational definition without altering
+  // the data structure. Changed 2026-08-02; treat that as the analysis split point.
+  { v: '滲便', label: '偶爾漏便', d: '不自覺漏出糞便、內褲沾到便漬' },
   { v: '失禁', label: '無法控制', d: '來不及上廁所、大量漏出', danger: true },
 ];
 const urinaryOptions = [
@@ -292,7 +297,9 @@ export default function SymptomReport({ onComplete, isDemo, userInfo }) {
 
       {/* Continence */}
       <div className="field">
-        <div className="field-lbl">肛門控制</div>
+        <div className="field-lbl">
+          肛門控制 <span className="hint">若只是傷口分泌物或血水沾到內褲，請在下方「傷口狀況」選「分泌物」</span>
+        </div>
         <div className="opt-stack">
           {continenceOptions.map(o => (
             <button key={o.v} type="button"

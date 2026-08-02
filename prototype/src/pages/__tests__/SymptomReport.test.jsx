@@ -82,8 +82,22 @@ describe('SymptomReport Page', () => {
     expect(screen.getByText('排尿狀況')).toBeInTheDocument();
     expect(screen.getByText('肛門控制')).toBeInTheDocument();
     expect(screen.getByText('完全尿不出來')).toBeInTheDocument();
-    expect(screen.getByText('偶爾滲漏')).toBeInTheDocument();
+    expect(screen.getByText('偶爾漏便')).toBeInTheDocument();
     expect(screen.getByText('無法控制')).toBeInTheDocument();
+  });
+
+  // Item validity, not cosmetics. The middle option used to read "內褲有少量污漬、
+  // 不自覺漏出" — after a haemorrhoidectomy with no sphincter involvement, underwear
+  // staining is almost always wound discharge, so patients reported discharge here
+  // and it was stored as 滲便 and alerted on as a continence problem. HSF-001 did
+  // exactly that on POD 7 and POD 9 while never once ticking 分泌物 in the wound
+  // field. The option must name stool, and the form must say where discharge goes.
+  it('肛門控制題明指糞便，並把傷口分泌物導向傷口欄位', () => {
+    render(<SymptomReport {...defaultProps} />, { wrapper: RouterWrapper });
+
+    expect(screen.getByText(/漏出糞便|便漬/)).toBeInTheDocument();
+    expect(screen.queryByText('內褲有少量污漬、不自覺漏出')).toBeNull();
+    expect(screen.getByText(/分泌物.*傷口狀況/)).toBeInTheDocument();
   });
 
   it('submit button is disabled when required fields are not selected', () => {
