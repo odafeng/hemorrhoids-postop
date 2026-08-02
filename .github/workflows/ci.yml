@@ -52,6 +52,18 @@ jobs:
         with:
           deno-version: v2.x
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: prototype/package-lock.json
+
+      # The tests assert with `node:assert/strict`, so Deno's type-check step needs
+      # @types/node resolvable in node_modules — otherwise it fails before any test
+      # runs. This is why the suite passes locally but not on a bare runner.
+      - name: Install dependencies (for @types/node)
+        run: npm ci
+
       - name: Run Edge Function tests
         run: deno test supabase/functions/
 
