@@ -90,10 +90,13 @@ follow_ups:
   - item: patients 表之 年齡／性別／BMI 為空值，須由研究人員補填
     status: 主持人回報已處理
   # 仍待處理
-  - item: 紙本 CRF 表單二第 4 項仍為修正前措辭，與 App 不一致，需同步並考量版本號變更
-    status: open
-  - item: 紙本 CRF 表單一「手術方式」僅列 LigaSure 與 Laser，無傳統 closed hemorrhoidectomy 選項
-    status: open
+  - item: 紙本 CRF 表單二第 4 項措辭、表單一術式選項二項修正
+    status: 已套用於執行版（收案文件/個案報告表_CRF紀錄.xlsx）；送審範本依規定不修改
+    detail:
+      - 表單二第 4 項改為「偶爾漏便（不自覺漏出糞便、內褲沾到便漬）」並加註分泌物導向傷口欄位
+      - 表單一「手術方式」拆為 術式／縫合方式／能量器械 三欄，麻醉改用 IVGA/LMGA/SA/LA
+      - 新增「選項清單」codebook 分頁，載明各題允許值，確保紙本與 App 用語一致可合併
+    remaining: 送審範本仍為原措辭；CRF 正式改版與版本號變更須循 IRB 程序
 
 artifacts:
   - path: 收案文件/個案報告表_CRF紀錄.xlsx
