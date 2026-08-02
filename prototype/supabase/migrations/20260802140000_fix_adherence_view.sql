@@ -1,36 +1,55 @@
--- v_adherence_summary: fix a join fan-out and use the consented follow-up schedule.
+-- v_adherence_summary: fix a join fan-out, and align the schedule with the protocol
+-- the PI confirmed on 2026-08-02.
 --
--- Two defects, both affecting adherence — a primary feasibility outcome.
+-- Two problems, both hitting adherence — a primary feasibility outcome.
 --
--- 1. Fan-out. The view LEFT JOINed both symptom_reports and alerts off patients,
---    so every report row was multiplied by that patient's alert count.
---    HSF-001 read total_reports = 24 (actually 8) and adherence_pct = 240%.
---    The inflation factor was each patient's alert count, so patients with more
---    alerts looked *more* adherent — a systematic bias, not just noise.
---    alerts is only needed for had_alerts, so it becomes an EXISTS subquery.
+-- 1. Join fan-out. The view LEFT JOINed both symptom_reports and alerts off patients.
+--    Two independent one-to-many joins multiply: every report row was repeated once
+--    per alert. Production read total_reports = 24 for HSF-001 against 8 actual
+--    reports, and adherence_pct = 240%. The inflation factor was each patient's alert
+--    count, so patients with more alerts scored as *more* adherent — a systematic
+--    bias, not noise. alerts is only needed for had_alerts, so it becomes EXISTS.
+--    (avg/min/max pain survived, since uniform duplication leaves them unchanged.)
 --
--- 2. Denominator. It was max(pod) + 1, i.e. a report expected every single day.
---    The consent form (ConsentPage.jsx) states the schedule the subject agreed to:
---    週1 每日, 週2 每兩日一次, 週3 起每週一次. Confirmed by the PI 2026-08-02.
---    Encoded as: POD 0-7 daily (8) → POD 9,11,13 (3) → POD 20,27 (2) = 13 over 30 days.
---    Interpretation to be aware of: week 2 counts +2 days from the last daily report
---    (POD 7), landing on 9/11/13 rather than 8/10/12/14; week 3+ counts +7 from POD 13.
+-- 2. Schedule. fn_expected_reports encoded 第三週起每週約 2 次 and week 2 on even PODs
+--    (8/10/12/14), totalling ~17 reports. The PI confirmed the protocol on 2026-08-02
+--    as 第一週每日、第二週每兩日一次、第三週起每週一次. Week 2 now counts +2 days from
+--    the last daily report (POD 7) → 9/11/13, and week 3+ counts +7 from POD 13
+--    → 20/27, totalling 13 over 30 days. The consent form says 第 15–30 天每週 1–2 次,
+--    so weekly is the conservative end of what the subject agreed to.
 --
---    Expected is now driven by days elapsed since surgery, not by max(pod). Under the
---    old formula a subject who stopped reporting on POD 3 while sitting at POD 20
---    scored 100%; that is exactly the dropout an adherence measure must catch.
+-- Note this function and view were written in 20260326060000_protocol_adherence.sql but
+-- never reached production — the migration history is desynced from prod, which is why
+-- prod still ran the naive max(pod)+1 denominator. Superseding it here.
 --
--- security_invoker = on is restated deliberately — it is what keeps the view under the
--- caller's RLS (patched 2026-07-26 after the view-RLS-bypass audit finding), and
--- CREATE OR REPLACE does not carry reloptions forward on its own.
---
--- New columns are appended, never inserted: CREATE OR REPLACE VIEW cannot reorder or
--- rename existing columns. Frontend reads via select('*') by name, so this is additive.
---
--- HAND-APPLIED to production 2026-08-02 via the Management API (migration history is
--- desynced from prod; db push would replay everything). Verified after apply:
--- HSF-001 total_reports 8, expected 9, adherence 88.9%, security_invoker still on.
-CREATE OR REPLACE VIEW public.v_adherence_summary
+-- DROP + CREATE rather than CREATE OR REPLACE: the latter cannot insert or reorder
+-- columns, and prod's column order had already diverged from this chain's. Dropping
+-- discards grants and reloptions, so both are restated below — security_invoker keeps
+-- the view under the caller's RLS (added 2026-07-23 after the view-RLS-bypass finding),
+-- and anon must stay revoked.
+
+CREATE OR REPLACE FUNCTION fn_expected_reports(current_pod INTEGER)
+RETURNS INTEGER AS $$
+DECLARE
+  d INTEGER;
+  cnt INTEGER := 0;
+BEGIN
+  FOR d IN 0..LEAST(current_pod, 30) LOOP
+    IF d <= 7 THEN
+      cnt := cnt + 1;                                              -- 第一週：每日
+    ELSIF d <= 14 THEN
+      IF (d - 7) % 2 = 0 THEN cnt := cnt + 1; END IF;              -- 第二週：POD 9/11/13
+    ELSE
+      IF (d - 13) % 7 = 0 THEN cnt := cnt + 1; END IF;             -- 第三週起：POD 20/27
+    END IF;
+  END LOOP;
+  RETURN GREATEST(cnt, 1);
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+DROP VIEW IF EXISTS v_adherence_summary;
+
+CREATE VIEW v_adherence_summary
 WITH (security_invoker = on) AS
 SELECT
     p.study_id,
@@ -38,24 +57,28 @@ SELECT
     p.sex,
     p.surgery_type,
     p.surgery_date,
-    count(sr.id)                               AS total_reports,
-    max(sr.pod)                                AS max_pod,
-    round(count(sr.id)::numeric
-          / GREATEST(e.expected, 1)::numeric * 100::numeric, 1) AS adherence_pct,
-    min(sr.pain_nrs)                           AS min_pain,
-    max(sr.pain_nrs)                           AS max_pain,
-    round(avg(sr.pain_nrs), 1)                 AS avg_pain,
-    EXISTS (SELECT 1 FROM alerts a WHERE a.study_id::text = p.study_id::text) AS had_alerts,
-    e.pod_now                                  AS days_since_surgery,
-    e.expected                                 AS expected_reports
+    COUNT(sr.id)                                        AS total_reports,
+    MAX(sr.pod)                                         AS max_pod,
+    -- Driven by elapsed days, not MAX(sr.pod): keying off the last report scored a
+    -- subject who stopped on POD 3 while sitting at POD 20 as 100% adherent, which is
+    -- precisely the dropout this measure exists to catch.
+    fn_expected_reports(GREATEST(0, CURRENT_DATE - p.surgery_date)::INTEGER)
+                                                        AS expected_reports,
+    LEAST(100, ROUND(
+        COUNT(sr.id)::NUMERIC
+        / fn_expected_reports(GREATEST(0, CURRENT_DATE - p.surgery_date)::INTEGER)
+        * 100, 1))                                      AS adherence_pct,
+    MIN(sr.pain_nrs)                                    AS min_pain,
+    MAX(sr.pain_nrs)                                    AS max_pain,
+    ROUND(AVG(sr.pain_nrs), 1)                          AS avg_pain,
+    EXISTS (SELECT 1 FROM alerts a
+             WHERE a.study_id::text = p.study_id::text) AS had_alerts,
+    GREATEST(0, LEAST(CURRENT_DATE - p.surgery_date, 30))::INTEGER
+                                                        AS days_since_surgery
 FROM patients p
 LEFT JOIN symptom_reports sr ON p.study_id::text = sr.study_id::text
-CROSS JOIN LATERAL (
-    SELECT d.pod_now,
-           ( LEAST(d.pod_now, 7) + 1
-           + GREATEST(0, FLOOR((LEAST(d.pod_now, 14) - 7) / 2.0))
-           + GREATEST(0, FLOOR((LEAST(d.pod_now, 30) - 13) / 7.0)) )::integer AS expected
-    FROM (SELECT GREATEST(LEAST(CURRENT_DATE - p.surgery_date, 30), 0) AS pod_now) d
-) e
 WHERE p.study_status::text <> 'withdrawn'::text
-GROUP BY p.study_id, p.age, p.sex, p.surgery_type, p.surgery_date, e.pod_now, e.expected;
+GROUP BY p.study_id, p.age, p.sex, p.surgery_type, p.surgery_date;
+
+REVOKE ALL ON v_adherence_summary FROM anon;
+GRANT SELECT ON v_adherence_summary TO authenticated, service_role;
