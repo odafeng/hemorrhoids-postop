@@ -97,7 +97,13 @@ describe('SymptomReport Page', () => {
 
     expect(screen.getByText(/漏出糞便|便漬/)).toBeInTheDocument();
     expect(screen.queryByText('內褲有少量污漬、不自覺漏出')).toBeNull();
-    expect(screen.getByText(/分泌物.*傷口狀況/)).toBeInTheDocument();
+    expect(screen.getByText(/傷口分泌物.*下方.*分泌物/)).toBeInTheDocument();
+
+    // The hint must not repeat the literal field label. e2e/patient-full-journey and
+    // e2e/auth-flow both locate the wound field with getByText('傷口狀況'), which is
+    // strict — a second match anywhere on the page fails the run. Asserting it here
+    // catches that in seconds instead of four minutes of Playwright.
+    expect(screen.getAllByText(/傷口狀況/)).toHaveLength(1);
   });
 
   it('submit button is disabled when required fields are not selected', () => {

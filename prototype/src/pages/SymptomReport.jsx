@@ -298,7 +298,9 @@ export default function SymptomReport({ onComplete, isDemo, userInfo }) {
       {/* Continence */}
       <div className="field">
         <div className="field-lbl">
-          肛門控制 <span className="hint">若只是傷口分泌物或血水沾到內褲，請在下方「傷口狀況」選「分泌物」</span>
+          {/* Says 傷口欄位, not the literal field label 傷口狀況: repeating the label
+              gave the page two matches for it and broke the E2E locators. */}
+          肛門控制 <span className="hint">若只是傷口分泌物或血水沾到內褲，請改在下方傷口欄位選「分泌物」</span>
         </div>
         <div className="opt-stack">
           {continenceOptions.map(o => (
