@@ -1,7 +1,30 @@
-# 痔瘡術後 AI 衛教追蹤系統
+# Postoperative Symptom Monitoring & AI Patient Education
 
-痔瘡手術（hemorrhoidectomy / stapled hemorrhoidopexy）術後症狀追蹤與 AI 衛教 PWA。
-臨床研究用途，符合 IRB 要求。
+[![Live PWA](https://img.shields.io/badge/Live_PWA-open-0F766E)](https://prototype-zeta-black.vercel.app)
+[![CI](https://github.com/odafeng/hemorrhoids-postop/actions/workflows/ci.yml/badge.svg)](https://github.com/odafeng/hemorrhoids-postop/actions/workflows/ci.yml)
+[![React](https://img.shields.io/badge/React-PWA-149ECA?logo=react&logoColor=white)](prototype/)
+[![Supabase](https://img.shields.io/badge/Supabase-RLS-3FCF8E?logo=supabase&logoColor=white)](prototype/supabase/)
+
+<p align="center">
+  <img src=".github/social-preview.png" alt="Postoperative symptom monitoring and AI-assisted patient education PWA" width="100%" />
+</p>
+
+An IRB-study platform for daily symptom reporting, longitudinal trends, server-side alerts, and evidence-grounded AI patient education after hemorrhoid surgery.
+
+| Dimension | Implementation |
+| --- | --- |
+| **Patient workflow** | Mobile-first PWA, daily check-ins, trend history, and education assistant |
+| **Clinical operations** | Researcher dashboard, adherence monitoring, alerts, and audit trail |
+| **Security** | Supabase Auth, Row Level Security, server-controlled roles, separated encrypted PII |
+| **Engineering** | React/Vite, Supabase Edge Functions, unit tests, Playwright E2E, GitHub Actions |
+
+**Live system:** [prototype-zeta-black.vercel.app](https://prototype-zeta-black.vercel.app) · Authentication is required for study workflows.
+
+> **Clinical research software:** This repository documents a deployed research system, not a medical device or a substitute for professional medical advice.
+
+## 中文研究與部署文件
+
+痔瘡手術（hemorrhoidectomy / stapled hemorrhoidopexy）術後症狀追蹤與 AI 衛教 PWA，供 IRB 核准之臨床研究使用。
 
 ## 架構
 
@@ -265,4 +288,4 @@ npm run test:e2e            # 67 E2E tests across 9 spec files
 
 ## License
 
-Private — 臨床研究用途
+Copyright © 2026 Shih-Feng Huang. The source is publicly available for research transparency and review, but **no open-source license is granted**. Clinical research use only; contact the author before reuse or redistribution.

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">Postoperative monitoring PWA social preview</title>
+  <desc id="desc">Clinical PWA for postoperative symptom monitoring and AI-assisted patient education.</desc>
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#071A2B"/><stop offset="1" stop-color="#173246"/></linearGradient><pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#5EEAD4" stroke-opacity="0.05"/></pattern></defs>
+  <rect width="1280" height="640" rx="28" fill="url(#bg)"/><rect width="1280" height="640" rx="28" fill="url(#grid)"/>
+  <rect x="54" y="62" width="8" height="516" rx="4" fill="#2DD4BF"/>
+  <text x="88" y="94" fill="#5EEAD4" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" letter-spacing="3">DIGITAL HEALTH · CLINICAL RESEARCH PWA</text>
+  <text x="86" y="180" fill="#F8FAFC" font-family="Arial, Helvetica, sans-serif" font-size="57" font-weight="750">Postoperative Monitoring</text>
+  <text x="88" y="242" fill="#C6D5DF" font-family="Arial, Helvetica, sans-serif" font-size="27">Symptoms, trends, alerts, and AI-assisted patient education</text>
+  <text x="88" y="288" fill="#8FB2C3" font-family="Arial, Helvetica, sans-serif" font-size="22">Role-based access · RLS · audit trail · PWA</text>
+  <g font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700">
+    <rect x="88" y="462" width="152" height="48" rx="24" fill="#123E50" stroke="#2DD4BF"/><text x="164" y="493" text-anchor="middle" fill="#E6FFFB">IRB study</text>
+    <rect x="256" y="462" width="152" height="48" rx="24" fill="#123E50" stroke="#2DD4BF"/><text x="332" y="493" text-anchor="middle" fill="#E6FFFB">Live PWA</text>
+    <rect x="424" y="462" width="174" height="48" rx="24" fill="#123E50" stroke="#2DD4BF"/><text x="511" y="493" text-anchor="middle" fill="#E6FFFB">CI + E2E tests</text>
+  </g>
+  <text x="88" y="566" fill="#6E93A7" font-family="Arial, Helvetica, sans-serif" font-size="18">React · Supabase · Claude API · odafeng/hemorrhoids-postop</text>
+  <g transform="translate(832 70)" font-family="Arial, Helvetica, sans-serif">
+    <rect width="290" height="500" rx="42" fill="#07131F" stroke="#8FB2C3" stroke-width="4"/>
+    <rect x="18" y="22" width="254" height="456" rx="28" fill="#F8FAFC"/>
+    <rect x="105" y="34" width="80" height="8" rx="4" fill="#B8C8D1"/>
+    <text x="42" y="88" fill="#0F3345" font-size="21" font-weight="700">Today · POD 5</text>
+    <rect x="38" y="112" width="214" height="86" rx="18" fill="#E6FFFB"/>
+    <text x="58" y="143" fill="#0F766E" font-size="16" font-weight="700">SYMPTOM CHECK-IN</text>
+    <text x="58" y="176" fill="#183B4B" font-size="22" font-weight="700">Report completed ✓</text>
+    <rect x="38" y="218" width="214" height="122" rx="18" fill="#EDF4F7"/>
+    <text x="58" y="248" fill="#33566A" font-size="15" font-weight="700">PAIN TREND</text>
+    <path d="M58 306L92 286L126 298L160 270L194 276L230 254" fill="none" stroke="#14B8A6" stroke-width="5"/>
+    <g fill="#14B8A6"><circle cx="58" cy="306" r="5"/><circle cx="92" cy="286" r="5"/><circle cx="126" cy="298" r="5"/><circle cx="160" cy="270" r="5"/><circle cx="194" cy="276" r="5"/><circle cx="230" cy="254" r="5"/></g>
+    <rect x="38" y="360" width="214" height="72" rx="18" fill="#0F766E"/>
+    <text x="145" y="390" text-anchor="middle" fill="#F0FDFA" font-size="15" font-weight="700">AI EDUCATION ASSISTANT</text>
+    <text x="145" y="414" text-anchor="middle" fill="#CCFBF1" font-size="14">Evidence-grounded guidance</text>
+  </g>
+</svg>
