@@ -1,0 +1,146 @@
+date: 2026-08-05
+weekday: 三
+phase: 收案執行
+day: 14        # 自 2026-07-23 首例收案起算
+objective: 修復研究人員邀請信未送達，完成 Custom SMTP、既有帳號恢復流程與 production E2E 驗證
+
+# 註：本檔位於公開 repo，只記錄機制層級資訊。
+# 收件地址、密碼、API key、SMTP password、DKIM public key 與個案資料均不寫入。
+
+trigger:
+  summary: PI 新增研究人員後，Auth user 已建立，但對方未收到邀請信
+  evidence:
+    - 目標帳號 email_confirmed=false、last_sign_in_at=null
+    - 專案當時未啟用 Supabase Custom SMTP
+    - Supabase Auth 回傳 email_address_not_authorized，但前端將所有 HTTP 422 誤顯示為帳號已存在
+
+incident:
+  category: auth_email_delivery
+  severity: major
+  affected_flow: PI 新增研究人員、研究人員首次設定密碼
+  user_impact:
+    - 新研究人員無法收到邀請並啟用帳號
+    - 已建立但未啟用的帳號沒有重寄入口，重複新增亦無法恢復
+  data_impact: 無 database schema 或研究資料異動
+
+root_cause:
+  primary: 專案仍使用 Supabase default SMTP；未設定 Custom SMTP 時，Auth 信件只能寄給 Supabase organization members
+  configuration_gap: RESEND_API_KEY 雖存在本機 .env，但 Supabase Auth 在託管環境寄信，不會自動讀取 App 的環境變數
+  observability_gap: Auth user 建立成功被誤當作 email 已送達，且 HTTP 422 被過度簡化成 duplicate email
+  recovery_gap: UI 與 Edge Function 沒有為既有未啟用帳號提供重寄啟用信
+
+investigation:
+  - step: 先查 Auth user 狀態與 Supabase Auth error code
+    conclusion: 問題發生在 SMTP 授權層，不是單純 inbox 或垃圾信分類
+  - step: 檢查 Resend domain 與 DNS 能力
+    conclusion: 沿用既有 Resend；Free plan 僅允許一個 domain，因此採用已持有的 shihfenghuang.com 根網域
+  - step: 檢查 Squarespace Domains 既有 DNS 政策
+    conclusion: 保留 root SPF 與 DMARC reject，只新增 Resend 所需的 DKIM、MAIL FROM MX 與 MAIL FROM SPF
+  - step: 驗證公開 DNS 與 authoritative nameserver 後再啟用 SMTP
+    conclusion: DKIM 與 SPF 全部 verified，open/click tracking 維持 disabled
+  - step: 診斷 Browser connector
+    conclusion: Chrome extension 與 native host 正常但 connector 無法通訊；不擷取 session/cookie，改由 PI 手動加入公開 DNS records
+
+decisions:
+  - id: 1
+    topic: SMTP provider
+    decision: 使用既有 Resend，不另建 SMTP 供應商
+    rationale: 減少額外金鑰、DNS 與監控面，且 Resend 官方支援 Supabase SMTP
+
+  - id: 2
+    topic: 寄件網域
+    decision: 使用 shihfenghuang.com 根網域
+    rationale: Resend Free plan 無法再建立 auth subdomain；日後升級方案再評估隔離 Auth reputation
+
+  - id: 3
+    topic: DNS 安全政策
+    decision: 只新增 Resend records，不放寬既有 DMARC 與 root SPF
+    records:
+      - resend._domainkey TXT（DKIM；值不記錄）
+      - send MX 指向 Resend 指定之 Amazon SES feedback host，priority 10
+      - send TXT 設定 MAIL FROM SPF
+
+  - id: 4
+    topic: Supabase Auth 設定範圍
+    decision: 只補 Custom SMTP，保留 mailer_autoconfirm=true、Site URL 與 redirect allow list
+    detail: Management API 的 smtp_port 必須是字串；第一次以 number 送出得到 HTTP 400 且未套用變更，改用 "465" 後成功
+
+  - id: 5
+    topic: 新帳號與既有未啟用帳號
+    decision: 新邀請沿用 inviteUserByEmail；既有未啟用帳號使用 resetPasswordForEmail 寄設定密碼連結
+    rationale: 不重建 Auth user，保留既有 user_id、role 與 surgeon-scoped claims
+
+  - id: 6
+    topic: 重寄 endpoint 的安全邊界
+    decision: Client 只送 user_id；server 以 service role 查真正 email，並限制 target role 為 researcher 或 pi
+    rationale: 避免 endpoint 被用來向任意 email 寄信；成功後寫入 audit_trail
+
+  - id: 7
+    topic: UI 成功語意
+    decision: 顯示「已提交寄送」而非「已寄出」
+    rationale: Provider accepted、recipient server delivered 與 inbox placement 是不同證據層級
+
+changes:
+  code:
+    - researcher-invite 依 email_exists、email_address_not_authorized、over_email_send_rate_limit 分別回傳 409、503、429
+    - researcher-manage 新增 PI-only resend_activation，並記錄 admin.resend_researcher_activation audit event
+    - PI 團隊列表新增「未啟用」狀態與「重寄啟用信」按鈕
+    - .gitignore 新增 .history/，避免 editor history 留下環境變數備份後被誤 commit
+  infrastructure:
+    - Resend domain shihfenghuang.com 完成 DKIM/SPF 驗證，tracking disabled
+    - Supabase Auth 啟用 Custom SMTP：smtp.resend.com、port 465、user resend、rate limit 30/hour
+    - SMTP sender 設為 痔瘡術後追蹤系統 <no-reply@shihfenghuang.com>
+  unchanged:
+    - 無 database schema migration
+    - 病人、症狀回報與研究資料表未更動
+    - 密碼、API keys、SMTP password 與個人 email 未寫入 Git
+
+deployment:
+  - target: Supabase Edge Function researcher-invite
+    production_version: 12
+    status: ACTIVE
+  - target: Supabase Edge Function researcher-manage
+    production_version: 13
+    status: ACTIVE
+  - target: Vercel production
+    deployment_id: dpl_2JaqpghpvFo8U8oSKGUFkoxoyPbN
+    url: https://prototype-zeta-black.vercel.app
+    status: deployed
+
+verification:
+  automated:
+    - Vitest：32 files、399 tests passed；recovery UI/Auth state 40/40 passed
+    - Deno：29 tests passed，涵蓋 server-side recipient、patient rejection 與 SMTP/rate-limit mapping
+    - Playwright：demo smoke 1 passed；7 項需本機 PI credentials 的 production tests skipped
+    - vite build passed；production 首頁 HTTP 200
+  production:
+    - 對既有未啟用研究人員提交 recovery email，Supabase HTTP 200，Resend event delivered
+    - delivered 只代表收件方 mail server 已接受，不保證進入 primary inbox
+    - 使用既有 PI 帳號完成收到信、開啟 recovery link、設定新密碼、登出與新密碼登入
+    - E2E 後 user_id、email confirmation、app_metadata.role=pi 與 surgeon_id=HSF 均保持不變
+
+security:
+  - Edge Functions 雖以 verify_jwt=false 部署，函式內仍使用 auth.getUser 驗證 bearer token 並要求 caller role=pi
+  - service role 僅存在 server side
+  - Browser connector 失敗時未改用 cookie extraction 或未授權 UI scripting
+  - 公開日誌只保留匿名化、可稽核的機制與結果
+
+rollback:
+  code: 回退修復 commit，重新部署 researcher-invite 與 researcher-manage
+  smtp: 可在 Supabase Auth config 暫停 Custom SMTP 或更換 provider
+  dns: 新 records 為 additive，可保留；rollback 不應放寬 DMARC 或刪除 root SPF
+
+follow_ups:
+  - item: 將 recovery email 預設英文主旨改為中文研究品牌 wording
+    status: deferred
+    reason: 應另開 email template 變更並測試 link variables，不與 delivery incident 混改
+  - item: 日後寄信故障依序檢查 Supabase Auth error、Resend event、recipient server 與 inbox placement
+    status: adopted_as_ops_procedure
+
+commits:
+  - hash: 3a5ceff6163f71a20bae6f82f6a41392f8e9c2f6
+    message: "fix(auth): restore researcher invitation delivery"
+  - hash: 078adef1f71256b8295b6f07101969ca9628aa2f
+    message: "docs(ops): move log into research journal"
+
+lesson: 寄信是分層系統；App 提交、Auth 建立 user、SMTP 接受、recipient server delivered 與 inbox placement 必須分別記錄，不可互相代替
