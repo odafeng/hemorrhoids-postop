@@ -101,5 +101,5 @@ follow_ups:
 artifacts:
   - path: 收案文件/個案報告表_CRF紀錄.xlsx
     desc: 新建之 CRF 個案紀錄工作簿（七分頁，對應送審 CRF 表單編號），僅以 Study ID 為鍵、不含個資
-  - path: docs/開發維運日誌.md
+  - path: 研究日誌/開發維運日誌.md
     desc: 同日之技術面變更紀錄（commit、prod DB 變更、驗證方式）
