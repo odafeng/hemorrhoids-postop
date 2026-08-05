@@ -867,6 +867,10 @@ input[type=range].slider::-moz-range-thumb {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
+.alert-banner.success {
+  border-color: var(--ok);
+  background: var(--ok-soft);
+}
 .alert-banner .al-icon,
 .alert-banner .alert-icon {
   flex: 0 0 24px;
@@ -880,6 +884,8 @@ input[type=range].slider::-moz-range-thumb {
 .alert-banner.danger .alert-icon { color: var(--danger); }
 .alert-banner.info .al-icon,
 .alert-banner.info .alert-icon { color: var(--accent-ink); }
+.alert-banner.success .al-icon,
+.alert-banner.success .alert-icon { color: var(--ok); }
 .alert-banner .al-title,
 .alert-banner .alert-title {
   font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 2px;

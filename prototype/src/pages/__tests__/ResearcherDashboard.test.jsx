@@ -13,6 +13,7 @@ vi.mock('../../utils/supabaseService', () => ({
   getAllReportsForResearcher: vi.fn(),
   listStudyInvites: vi.fn(),
   listResearchers: vi.fn(),
+  resendResearcherActivation: vi.fn(),
 }));
 import * as sb from '../../utils/supabaseService';
 
@@ -23,6 +24,7 @@ function LocationProbe() {
 
 describe('ResearcherDashboard — cohort row navigation', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     sb.getAllPatients.mockResolvedValue([
       { study_id: 'HSF-001', surgeon_id: 'HSF', study_status: 'active', surgery_date: '2026-07-24' },
     ]);
@@ -32,6 +34,7 @@ describe('ResearcherDashboard — cohort row navigation', () => {
     sb.getAllReportsForResearcher.mockResolvedValue([]);
     sb.listStudyInvites.mockResolvedValue([]);
     sb.listResearchers.mockResolvedValue([]);
+    sb.resendResearcherActivation.mockResolvedValue({ success: true });
   });
 
   it('點 cohort 列導覽到該病人詳情', async () => {
@@ -68,5 +71,32 @@ describe('ResearcherDashboard — cohort row navigation', () => {
     fireEvent.click(recordBtn);
     await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/surgical-record/HSF-001'));
     expect(screen.getByTestId('loc')).not.toHaveTextContent('/lookup/HSF-001');
+  });
+
+  it('PI 可替尚未啟用的研究人員重新寄送設定密碼信', async () => {
+    sb.listResearchers.mockResolvedValue([
+      {
+        id: 'researcher-1',
+        email: 'researcher@example.com',
+        display_name: '測試研究員',
+        role: 'researcher',
+        last_sign_in_at: null,
+      },
+    ]);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const client = createTestQueryClient();
+
+    render(
+      <MemoryRouter initialEntries={['/researcher']}>
+        <QueryClientProvider client={client}>
+          <ResearcherDashboard onNavigate={() => {}} isDemo={false} userInfo={{ id: 'pi-1', role: 'pi' }} onLogout={() => {}} />
+        </QueryClientProvider>
+      </MemoryRouter>
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '重新寄送測試研究員的設定密碼信' }));
+
+    await waitFor(() => expect(sb.resendResearcherActivation).toHaveBeenCalledWith('researcher-1'));
+    expect(await screen.findByText('已提交設定密碼信到 researcher@example.com')).toBeInTheDocument();
   });
 });

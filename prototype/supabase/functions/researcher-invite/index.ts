@@ -5,6 +5,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { invitationErrorResponse } from "./errors.ts";
 
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
@@ -107,16 +108,10 @@ Deno.serve(async (req: Request) => {
       },
     });
     if (inviteError) {
-      // Supabase returns HTTP 422 (or a message containing "already") when
-      // the email is already registered in this project.
-      if (
-        inviteError.status === 422 ||
-        /already registered|already been registered|already exists/i.test(
-          inviteError.message || "",
-        )
-      ) {
-        return new Response(JSON.stringify({ error: `${email} 已經註冊過` }), {
-          status: 409,
+      const translated = invitationErrorResponse(inviteError, email);
+      if (translated) {
+        return new Response(JSON.stringify({ error: translated.error }), {
+          status: translated.status,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }

@@ -105,7 +105,7 @@ test.describe('Researcher invite — PI flow (real Supabase)', () => {
     await page.getByPlaceholder(/研究助理/).fill('測試人員');
     await page.getByRole('button', { name: /寄出邀請信/ }).click();
 
-    await expect(page.getByText(`✓ 已寄出邀請信到 ${testEmail}`)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(`✓ 已提交邀請信寄送至 ${testEmail}`)).toBeVisible({ timeout: 30_000 });
 
     // Form should have cleared
     await expect(page.getByPlaceholder('researcher@example.com')).toHaveValue('');
@@ -126,5 +126,40 @@ test.describe('Researcher invite — PI flow (real Supabase)', () => {
     await page.getByRole('button', { name: /寄出邀請信/ }).click();
 
     await expect(page.getByText('dup@example.com 已經註冊過')).toBeVisible({ timeout: 30_000 });
+  });
+
+  test('unactivated researcher → PI can resend password setup email', async ({ page }) => {
+    let resendRequested = false;
+    await page.route('**/functions/v1/researcher-manage', async (route) => {
+      const body = route.request().postDataJSON();
+      if (body.action === 'resend_activation') {
+        resendRequested = body.user_id === 'mock-researcher-id';
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true }),
+        });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          users: [{
+            id: 'mock-researcher-id',
+            email: 'pending-researcher@example.com',
+            display_name: '待啟用研究員',
+            role: 'researcher',
+            last_sign_in_at: null,
+          }],
+        }),
+      });
+    });
+    page.on('dialog', (dialog) => dialog.accept());
+    await page.reload();
+
+    await page.getByRole('button', { name: '重新寄送待啟用研究員的設定密碼信' }).click();
+
+    await expect(page.getByText('已提交設定密碼信到 pending-researcher@example.com')).toBeVisible();
+    expect(resendRequested).toBe(true);
   });
 });

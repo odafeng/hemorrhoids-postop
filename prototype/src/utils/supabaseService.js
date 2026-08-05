@@ -229,6 +229,13 @@ export async function unbanResearcher(userId) {
   return await callResearcherManage({ action: 'unban', user_id: userId });
 }
 
+/**
+ * PI-only: send a password setup email to an existing researcher/PI account.
+ */
+export async function resendResearcherActivation(userId) {
+  return await callResearcherManage({ action: 'resend_activation', user_id: userId });
+}
+
 async function callResearcherManage(body) {
   if (!supabase) throw new Error('Supabase not configured');
   const { data: { session } } = await supabase.auth.getSession();

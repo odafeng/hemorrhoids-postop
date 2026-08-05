@@ -50,7 +50,9 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
   const [teamList, setTeamList] = useState([]);
   const [teamLoading, setTeamLoading] = useState(false);
   const [teamError, setTeamError] = useState('');
+  const [teamNotice, setTeamNotice] = useState('');
   const [banningId, setBanningId] = useState(null);
+  const [resendingId, setResendingId] = useState(null);
 
   const loadTeam = async () => {
     setTeamLoading(true); setTeamError('');
@@ -81,6 +83,21 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
       alert(`${verb}失敗：${err?.message || '未知錯誤'}`);
     } finally {
       setBanningId(null);
+    }
+  };
+
+  const resendActivation = async (u) => {
+    if (!window.confirm(`重新寄送設定密碼信給「${u.display_name || u.email}」嗎？`)) return;
+    setTeamError('');
+    setTeamNotice('');
+    setResendingId(u.id);
+    try {
+      await sb.resendResearcherActivation(u.id);
+      setTeamNotice(`已提交設定密碼信到 ${u.email}`);
+    } catch (err) {
+      setTeamError(err?.message || '重新寄送失敗');
+    } finally {
+      setResendingId(null);
     }
   };
 
@@ -131,7 +148,7 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
         researcherRole,
         researcherSurgeon || null,
       );
-      setResearcherResult(`✓ 已寄出邀請信到 ${researcherEmail.trim()}`);
+      setResearcherResult(`✓ 已提交邀請信寄送至 ${researcherEmail.trim()}`);
       setResearcherEmail('');
       setResearcherName('');
       loadTeam();
@@ -605,6 +622,13 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
             </div>
           )}
 
+          {teamNotice && (
+            <div className="alert-banner success" style={{ marginBottom: 10 }}>
+              <div className="al-icon"><I.Check width={18} height={18} /></div>
+              <div><div className="al-msg">{teamNotice}</div></div>
+            </div>
+          )}
+
           {teamLoading && teamList.length === 0 && (
             <p style={{ fontSize: 12, color: 'var(--ink-3)', textAlign: 'center', padding: '10px 0', fontFamily: 'var(--font-mono)' }}>
               載入中…
@@ -655,6 +679,11 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
                             已停用
                           </span>
                         )}
+                        {!u.last_sign_in_at && !isBanned && (
+                          <span className="chip chip-warn" style={{ padding: '1px 7px', fontSize: 9.5, fontFamily: 'var(--font-mono)' }}>
+                            未啟用
+                          </span>
+                        )}
                       </div>
                       <div style={{
                         fontSize: 11, color: 'var(--ink-3)',
@@ -669,27 +698,43 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
                         </div>
                       )}
                     </div>
-                    {!isSelf && (
-                      <button type="button"
-                        onClick={() => toggleBan(u)}
-                        disabled={banningId === u.id}
-                        style={{
-                          background: isBanned ? 'var(--ok-soft)' : 'var(--danger-soft)',
-                          border: `1px solid ${isBanned ? 'var(--ok)' : 'var(--danger)'}`,
-                          color: isBanned ? 'var(--ok)' : 'var(--danger)',
-                          borderRadius: 6, padding: '4px 10px',
-                          fontSize: 11, cursor: 'pointer',
-                          fontFamily: 'var(--font-mono)', letterSpacing: '0.04em',
-                          whiteSpace: 'nowrap',
-                        }}>
-                        {banningId === u.id ? '處理中…' : (isBanned ? '啟用' : '停用')}
-                      </button>
-                    )}
-                    {isSelf && (
-                      <span style={{ fontSize: 10, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>
-                        （你）
-                      </span>
-                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {!isSelf && !isBanned && !u.last_sign_in_at && (
+                        <button type="button"
+                          aria-label={`重新寄送${u.display_name || u.email}的設定密碼信`}
+                          onClick={() => resendActivation(u)}
+                          disabled={resendingId === u.id}
+                          style={{
+                            background: 'var(--accent-soft)', border: '1px solid var(--accent)',
+                            color: 'var(--accent)', borderRadius: 6, padding: '4px 10px',
+                            fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)',
+                            whiteSpace: 'nowrap',
+                          }}>
+                          {resendingId === u.id ? '寄送中…' : '重寄啟用信'}
+                        </button>
+                      )}
+                      {!isSelf && (
+                        <button type="button"
+                          onClick={() => toggleBan(u)}
+                          disabled={banningId === u.id}
+                          style={{
+                            background: isBanned ? 'var(--ok-soft)' : 'var(--danger-soft)',
+                            border: `1px solid ${isBanned ? 'var(--ok)' : 'var(--danger)'}`,
+                            color: isBanned ? 'var(--ok)' : 'var(--danger)',
+                            borderRadius: 6, padding: '4px 10px',
+                            fontSize: 11, cursor: 'pointer',
+                            fontFamily: 'var(--font-mono)', letterSpacing: '0.04em',
+                            whiteSpace: 'nowrap',
+                          }}>
+                          {banningId === u.id ? '處理中…' : (isBanned ? '啟用' : '停用')}
+                        </button>
+                      )}
+                      {isSelf && (
+                        <span style={{ fontSize: 10, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>
+                          （你）
+                        </span>
+                      )}
+                    </div>
                   </div>
                 );
               })}
