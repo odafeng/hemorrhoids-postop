@@ -1,0 +1,117 @@
+date: 2026-08-09
+weekday: 日
+phase: 收案執行
+day: 18        # 自 2026-07-23 首例收案起算
+objective: 邀請碼有效期由「建立後 N 天」改為固定到期日，並自研究人員介面移除該欄位
+
+# 註：本檔位於公開 repo，只記錄機制層級資訊。
+# invite_token 值、受試者身分與個案資料均不寫入。
+
+trigger:
+  summary: 承 2026-08-08 之 follow_up——當日只改了 production 既有的 12 筆資料，程式碼預設仍為 30 天
+  risk_if_untouched: 日後自後台新開的邀請碼會再度長出一批與現有 12 筆不一致的到期日
+
+problem:
+  - id: 1
+    issue: 同一研究長出互不相容的批次
+    detail: >
+      HSF-001～010 於 2026-07-23 預先產生、有效期 90 天；WCC-001/002 於 2026-08-04
+      自後台開立、套用 createStudyInvite() 的 30 天預設。兩批相差近七週，差異純粹來自
+      「哪天開的、走哪條路徑」。
+  - id: 2
+    issue: UI 上限擋住了正確答案
+    detail: 「有效天數」輸入框寫死 max="365"，而 2026-08 到 2027-12-31 為 510 天，天數模型無法表達
+  - id: 3
+    issue: 該欄位不屬於收案動線
+    detail: >
+      有效期是研究層級參數，不是逐案決策。放在收案表單只是多一個能填錯的地方，
+      而填錯的代價會延遲到病床邊、病人註冊失敗時才浮現。
+
+decisions:
+  - id: 1
+    topic: 有效期模型
+    decision: 改為固定到期日常數 INVITE_EXPIRY_DATE，取代 expiresInDays 參數
+    rationale: >
+      天數模型即使放寬上限仍是「建立後 N 天」：2027 年才開的碼會活到 2029 年，
+      且預設值每天都在變。固定到期日直接對應「有效到收案結束為止」。
+
+  - id: 2
+    topic: 日期語意
+    decision: 2027-12-31 不對應 IRB 任何日期，僅為刻意設遠的緩衝值；此點寫入常數註解
+    rationale: >
+      避免後續維護者誤以為那是法規期限而不敢改，或反過來以為改了它就等於延長 IRB 許可。
+
+  - id: 3
+    topic: 常數必須為當日日終
+    decision: 寫成 '2027-12-31T23:59:59+08:00'，並以單元測試釘死
+    rationale: >
+      patient-onboard 驗證條件為 expires_at >= now()。若退化為裸日期 '2027-12-31'
+      （UTC 午夜＝台北 08:00），碼會在標稱最後一天的早上失效。同類錯誤在 2026-08-08
+      更新 production 資料時已發生過一次。
+
+  - id: 4
+    topic: 是否保留 per-invite 覆寫參數
+    decision: 不保留，函式簽章改為 createStudyInvite(studyId)
+    rationale: 無呼叫端需要，留著即是留一條沒人走的分支
+
+changes:
+  code:
+    - supabaseService.js 新增匯出常數 INVITE_EXPIRY_DATE，insert 與 update 兩條路徑共用
+    - createStudyInvite 移除 expiresInDays 參數與天數計算
+    - ResearcherDashboard 移除 inviteDays state 與「有效天數」欄位，呼叫改為單一引數
+    - 保留建立成功後顯示之「到期：」，研究人員不需設定但需看得見
+  tests:
+    - 新增 utils/__tests__/inviteExpiry.test.js（3 項）：新建路徑、重新產生路徑、日終邊界
+    - ResearcherDashboard.test.jsx 新增 1 項：介面無有效期欄位且不傳天數給 service
+  unchanged:
+    - 無 database schema migration，無 Edge Function 邏輯變更
+    - patient-onboard 驗證條件未動
+    - 2026-08-08 已更新之 12 筆資料未再變動
+
+process_note:
+  finding: 首版 UI 測試中的「欄位不存在」斷言是假綠
+  detail: >
+    queryByText 緊接 render() 執行，命中的是收案卡片尚未掛載的載入畫面，因此無論欄位
+    在不在都會通過。改為先 await findByPlaceholderText 等卡片掛載後再斷言，該條才如預期轉紅。
+  lesson: RTL 中對「不存在」的斷言必須先確保容器已掛載，否則等於沒有斷言
+
+deployment:
+  - target: Vercel production
+    deployment_id: dpl_4hsPnrXaX41RnyvMy857cPEcg1hm
+    created: 2026-08-09T00:28:23+08:00
+    note: Vercel git integration 不等 CI，push 後即建置
+  - target: Supabase Edge Functions
+    note: CI 之 deploy-supabase 會重新部署全部函式；本次無函式原始碼變更
+
+verification:
+  local:
+    - Vitest 全套：33 files、403 tests passed
+    - Deno：29 tests passed
+    - npm run lint 無輸出；npm run build 成功
+    - RED 階段已實際觀察四項新測試失敗且失敗原因正確，再進 GREEN
+  ci:
+    - run 31267027420 全綠：test、e2e、Deno、deploy-supabase 四個 job 皆 success
+    - deploy-supabase 之 smoke test 通過：health endpoint healthy、study views 不可匿名讀取
+  production:
+    - 部署後之 bundle 含 '2027-12-31T23:59:59+08:00'
+    - 同一 bundle 已不含字串「有效天數」，確認欄位確實下架
+  not_performed:
+    - 未於後台實際開立測試邀請碼——需 PI 帳號憑證，改以 bundle 內容驗證上線結果
+
+rollback:
+  method: revert commit 491ce20 後重新部署
+  database: 不需異動。已發出邀請碼之 expires_at 已寫入資料列，不隨程式碼版本改變
+
+commits:
+  - hash: fff240a
+    message: "docs(spec): invite expiry moves from N-day default to fixed date"
+  - hash: 491ce20
+    message: "feat(invites): expire invite codes on a fixed date, not N days after creation"
+
+references:
+  spec: docs/superpowers/specs/2026-08-09-invite-expiry-fixed-date-design.md
+  resolves: 2026-08-09.yaml 承接 2026-08-08.yaml 之 follow_ups 第一項（createStudyInvite 預設 30 天）
+
+lesson: >
+  只改資料不改產生資料的程式碼，等於替同一個缺陷排定了下一次發生的時間。
+  2026-08-08 修好了既有的 12 筆，但預設值留在原處，下一批新碼就會重演同樣的不一致。
