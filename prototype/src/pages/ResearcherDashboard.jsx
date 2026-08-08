@@ -31,7 +31,6 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
   // Invite token state
   const [invitePrefix, setInvitePrefix] = useState('HSF');
   const [inviteNum, setInviteNum] = useState('');
-  const [inviteDays, setInviteDays] = useState(30);
   const [inviteCreating, setInviteCreating] = useState(false);
   const [inviteResult, setInviteResult] = useState(null);
   const [inviteError, setInviteError] = useState('');
@@ -115,7 +114,7 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
     const studyId = `${invitePrefix}-${inviteNum.trim().padStart(3, '0')}`;
     setInviteCreating(true);
     try {
-      const row = await sb.createStudyInvite(studyId, Number(inviteDays) || 30);
+      const row = await sb.createStudyInvite(studyId);
       setInviteResult(row);
       setInviteNum('');
       sb.listStudyInvites().then(rows => setRecentInvites(rows.slice(0, 5)));
@@ -426,12 +425,6 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
             <input className="input" type="text" inputMode="numeric" placeholder="編號 001"
               value={inviteNum}
               onChange={(e) => setInviteNum(e.target.value.replace(/\D/g, '').slice(0, 4))} />
-          </div>
-          <div className="input-group" style={{ marginBottom: 10 }}>
-            <label className="input-lbl">有效天數</label>
-            <input className="input" type="number" min="1" max="365"
-              value={inviteDays}
-              onChange={(e) => setInviteDays(e.target.value)} />
           </div>
           {invitePrefix && inviteNum && (
             <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 10, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>

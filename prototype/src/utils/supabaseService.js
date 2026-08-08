@@ -283,17 +283,28 @@ function generateInviteToken() {
 // with normalizeInviteCode) is what keeps printed codes usable.
 export const __test_generateInviteToken = generateInviteToken;
 
+// Every invite expires on this date rather than N days after it was created, so
+// codes handed out months apart stay in step. Under the old per-invite window the
+// same study grew two incompatible batches (90 days for the pre-generated HSF set,
+// 30 for anything opened from the dashboard).
+//
+// This is not an IRB milestone. It is a deliberately distant buffer picked to
+// outlast enrolment; if enrolment runs longer, move this line.
+//
+// It must be end of day. patient-onboard validates with `expires_at >= now()`, so
+// a bare '2027-12-31' (UTC midnight, 08:00 Taipei) would kill the code on the
+// morning of the day the researcher believes is its last.
+export const INVITE_EXPIRY_DATE = '2027-12-31T23:59:59+08:00';
+
 /**
  * Create a new study invite.
  * @param {string} studyId   e.g. "HSF-042"
- * @param {number} expiresInDays  default 30
  * @returns {Promise<{study_id, invite_token, expires_at, status}>}
  */
-export async function createStudyInvite(studyId, expiresInDays = 30) {
+export async function createStudyInvite(studyId) {
   if (!supabase) throw new Error('Supabase not configured');
   const token = generateInviteToken();
-  const expires = new Date();
-  expires.setDate(expires.getDate() + expiresInDays);
+  const expiresAt = new Date(INVITE_EXPIRY_DATE).toISOString();
 
   // Check existing invite for this study_id
   const { data: existing } = await supabase
@@ -312,7 +323,7 @@ export async function createStudyInvite(studyId, expiresInDays = 30) {
       .update({
         invite_token: token,
         status: 'pending',
-        expires_at: expires.toISOString(),
+        expires_at: expiresAt,
       })
       .eq('study_id', studyId)
       .select()
@@ -327,7 +338,7 @@ export async function createStudyInvite(studyId, expiresInDays = 30) {
       study_id: studyId,
       invite_token: token,
       status: 'pending',
-      expires_at: expires.toISOString(),
+      expires_at: expiresAt,
     })
     .select()
     .single();
