@@ -1,0 +1,83 @@
+date: 2026-08-08
+weekday: 六
+phase: 收案執行
+day: 17        # 自 2026-07-23 首例收案起算
+objective: 將 study_invites 全部邀請碼之有效期延長至 2027-12-31（台北時間日終）
+
+# 註：本檔位於公開 repo，只記錄機制層級資訊。
+# invite_token 值、受試者身分與個案資料均不寫入。
+
+trigger:
+  summary: PI 要求把所有邀請碼到期日改為 2027-12-31
+  context:
+    - 收案目標 50 例，截至今日僅 4 組邀請碼已使用（HSF-001、HSF-002、WCC-001、WCC-002）
+    - 未使用之 8 組（HSF-003～010）原到期日 2026-10-21，將早於收案完成日失效
+  observed_state:
+    - 兩批邀請碼有效期不一致：HSF 批於 2026-07-23 預先產生、有效期 90 天
+    - WCC 批於 2026-08-04 自研究人員後台產生，套用 createStudyInvite() 預設 30 天
+    - 查詢當下無任何一筆已過期
+
+change:
+  category: db_data
+  scope: study_invites 全表 12 列（8 pending + 4 used）
+  statement: UPDATE study_invites SET expires_at = '2027-12-31 23:59:59+08'::timestamptz
+  applied_via: Supabase Management API /database/query（依既有慣例手動套用，未走 db push）
+  schema_change: 無；僅資料值異動，未新增 migration
+
+decisions:
+  - id: 1
+    topic: 到期時刻之邊界語意
+    decision: 寫入 2027-12-31 23:59:59+08（UTC 2027-12-31 15:59:59），而非 2027-12-31 00:00
+    rationale: >
+      patient-onboard 的驗證條件為 expires_at >= now()。若寫入日期起點，
+      2027-12-31 當天全日邀請碼即已失效，與「有效到 12/31」之語意相反。
+
+  - id: 2
+    topic: 是否一併更新已使用之邀請碼
+    decision: 12 列全部更新
+    rationale: >
+      PI 指示為「所有邀請碼」。已使用者之延期在功能上為惰性——
+      patient-onboard 兩條驗證路徑分別要求 status='pending' 與 used_by_user_id IS NULL，
+      status='used' 且已綁定 user_id 之列無法被任一路徑取用；
+      createStudyInvite() 亦對 status='used' 直接拒絕重新產生。
+
+  - id: 3
+    topic: 不修改 createStudyInvite() 之 30 天預設
+    decision: 維持現狀，僅記錄為待決事項
+    rationale: 該值屬前端程式碼，變更須部署；收案期間不部署（見 follow_ups）
+
+side_effects:
+  triggers_on_table: 無（已查 pg_trigger，study_invites 無非內建 trigger）
+  audit_trail: 未寫入（無 trigger 連動）
+  invite_token: 未異動，已發出之紙本邀請碼仍然有效
+  status_column: 未異動，used/pending 分佈不變
+
+verification:
+  - 更新前：pending 8、used 4，最早到期 2026-09-03、最晚 2026-10-21，已過期 0
+  - UPDATE ... RETURNING 回傳 12 列，均為 2027-12-31 23:59:59（Asia/Taipei）
+  - 更新後複查：total=12、expires_at 等於目標值者 12、status='pending' 且 expires_at >= now() 者 8
+  - 未執行前端部署，未部署任何 Edge Function
+
+unchanged:
+  - 無 database schema migration
+  - patients、symptom_reports 等研究資料表未更動
+  - 無程式碼變更、無 Vercel 部署
+
+rollback:
+  method: 以同一 Management API 端點將 expires_at 改回原值
+  original_values:
+    - HSF-001～010（id 8–17）：2026-10-21 08:30:00.117422+00
+    - WCC-001（id 19）：2026-09-03 04:21:14.104+00
+    - WCC-002（id 20）：2026-09-03 04:22:31.557+00
+
+follow_ups:
+  - item: createStudyInvite() 預設有效期仍為 30 天，日後自後台新開之邀請碼不受本次延期涵蓋
+    status: open
+    note: 若要一併調整須改前端並部署，應排在收案空檔並依既有 banner 流程處理
+  - item: study_invites 之 'expired' status 值目前無任何寫入來源，過期判定完全依賴查詢時的 expires_at 比較
+    status: noted
+    note: 非缺陷，但 status 欄位的 CHECK 允許值與實際使用不一致，易誤導後續維護者
+
+lesson: >
+  TIMESTAMPTZ 欄位配合 >= now() 比較時，「到期日」必須寫成當日日終而非日始，
+  否則使用者認知的最後一天實際上整天不可用。
