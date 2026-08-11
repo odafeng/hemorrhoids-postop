@@ -14,6 +14,12 @@ const SURGEON_PREFIXES = Object.keys(SURGEON_NAMES);
 
 const getSurgeonId = (p) => p.surgeon_id || (p.study_id?.includes('-') ? p.study_id.split('-')[0].toUpperCase() : null);
 
+// e2e 常駐帳號。它不回報症狀，依從率恆為 0%，且 expected_reports 逐日累加，
+// 留在統計裡會把整體依從率愈拉愈低。只排除於統計與圖表，收案列表仍照常顯示——
+// e2e/researcher-flow.spec.ts 會搜尋並斷言該列可見。
+const NON_SUBJECT_STUDY_IDS = new Set(['TEST-001']);
+const isStudySubject = (row) => !NON_SUBJECT_STUDY_IDS.has(row.study_id);
+
 export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLogout }) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -198,9 +204,11 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
     }
   };
 
-  const activePatients = patients.filter(p => p.study_status === 'active').length;
-  const avgAdherence = adherence.length > 0
-    ? (adherence.reduce((sum, a) => sum + Number(a.adherence_pct), 0) / adherence.length).toFixed(1)
+  const studyPatients = patients.filter(isStudySubject);
+  const studyAdherence = adherence.filter(isStudySubject);
+  const activePatients = studyPatients.filter(p => p.study_status === 'active').length;
+  const avgAdherence = studyAdherence.length > 0
+    ? (studyAdherence.reduce((sum, a) => sum + Number(a.adherence_pct), 0) / studyAdherence.length).toFixed(1)
     : 0;
   const activeAlerts = alerts.filter(a => !a.acknowledged).length;
 
@@ -339,7 +347,7 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
         <div className="stat-card">
           <div className="stat-lbl">ENROLLED</div>
           <div className="stat-val">{activePatients}</div>
-          <div className="stat-foot">of {patients.length || 40} total</div>
+          <div className="stat-foot">of {studyPatients.length || 40} total</div>
         </div>
         <div className="stat-card">
           <div className="stat-lbl">ADHERENCE</div>
@@ -737,7 +745,7 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
       )}
 
       {allReports.length > 0 && (
-        <ResearcherCharts reports={allReports} patients={patients} adherence={adherence} />
+        <ResearcherCharts reports={allReports} patients={studyPatients} adherence={studyAdherence} />
       )}
 
       {/* Cohort */}

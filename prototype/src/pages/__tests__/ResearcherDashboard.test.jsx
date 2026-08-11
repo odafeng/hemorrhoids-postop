@@ -131,3 +131,64 @@ describe('ResearcherDashboard — cohort row navigation', () => {
     await waitFor(() => expect(sb.createStudyInvite).toHaveBeenCalledWith('HSF-011'));
   });
 });
+
+describe('ResearcherDashboard — 統計數字排除測試帳號', () => {
+  // TEST-001 是 e2e 用的常駐帳號，它不回報症狀，依從率永遠是 0%。留在分母裡
+  // 會把整體依從率往下拉，而且它的 expected_reports 逐日增加，誤差只會擴大。
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sb.getAllPatients.mockResolvedValue([
+      { study_id: 'HSF-001', surgeon_id: 'HSF', study_status: 'active', surgery_date: '2026-07-24' },
+      { study_id: 'HSF-002', surgeon_id: 'HSF', study_status: 'active', surgery_date: '2026-08-08' },
+      { study_id: 'WCC-001', surgeon_id: 'WCC', study_status: 'active', surgery_date: '2026-08-05' },
+      { study_id: 'WCC-002', surgeon_id: 'WCC', study_status: 'active', surgery_date: '2026-08-05' },
+      { study_id: 'TEST-001', surgeon_id: 'TEST', study_status: 'active', surgery_date: '2026-07-18' },
+    ]);
+    sb.getAdherenceSummary.mockResolvedValue([
+      { study_id: 'HSF-001', adherence_pct: 100 },
+      { study_id: 'HSF-002', adherence_pct: 100 },
+      { study_id: 'WCC-001', adherence_pct: 100 },
+      { study_id: 'WCC-002', adherence_pct: 100 },
+      { study_id: 'TEST-001', adherence_pct: 0 },
+    ]);
+    sb.getAllAlertsForResearcher.mockResolvedValue([]);
+    sb.getUnreviewedChats.mockResolvedValue([]);
+    sb.getAllReportsForResearcher.mockResolvedValue([]);
+    sb.listStudyInvites.mockResolvedValue([]);
+    sb.listResearchers.mockResolvedValue([]);
+  });
+
+  const renderDashboard = () => {
+    const client = createTestQueryClient();
+    return render(
+      <MemoryRouter initialEntries={['/researcher']}>
+        <QueryClientProvider client={client}>
+          <ResearcherDashboard onNavigate={() => {}} isDemo={false} userInfo={{ role: 'pi' }} onLogout={() => {}} />
+        </QueryClientProvider>
+      </MemoryRouter>
+    );
+  };
+
+  const statValue = (label) =>
+    screen.getByText(label).closest('.stat-card').querySelector('.stat-val').textContent;
+
+  it('ENROLLED 不計入 TEST-001', async () => {
+    renderDashboard();
+    await screen.findByText('HSF-001');
+    expect(statValue('ENROLLED')).toBe('4');
+  });
+
+  it('ADHERENCE 不把 TEST-001 的 0% 算進分母', async () => {
+    renderDashboard();
+    await screen.findByText('HSF-001');
+    // 四名真實受試者都是 100%；含 TEST-001 會算成 80.0%
+    expect(statValue('ADHERENCE')).toContain('100.0');
+  });
+
+  it('TEST-001 仍出現在收案列表中', async () => {
+    // e2e/researcher-flow.spec.ts 會搜尋並斷言 TEST-001 可見。
+    // 統計要排除它，列表不能連帶把它藏起來。
+    renderDashboard();
+    expect(await screen.findByText('TEST-001')).toBeInTheDocument();
+  });
+});
