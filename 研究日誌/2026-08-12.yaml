@@ -81,17 +81,28 @@ changes:
     - CSV 匯出未受影響：TEST-001 無 symptom_reports，本來就不會出現在匯出結果中
 
 deployment:
-  status: 尚未部署
-  blocker: GitHub token 失效，git push 無法完成；Vercel 靠 git integration 觸發，故 production 仍為舊版
-  pending_commits:
-    - 44ccee6 docs(journal)
-    - df48665 fix(dashboard)
-  note: >
-    本次 bundle hash 由 index-CG1mqW4C.js 變為 index-BHGEQRpc.js，
-    部署後開著 App 的患者會看到「系統已更新」橫幅。宜於夜間執行。
+  status: 已部署
+  pushed: af275f1..37e69cb（三個 commit）
+  delay_cause: >
+    GitHub token 失效致 push 一度受阻，PI 重新認證後推送。期間 production 維持舊版，
+    儀表板仍顯示受污染的數字約 15 分鐘。
+  targets:
+    - target: Vercel production
+      note: git integration 觸發，不等 CI
+      verified: live bundle index-43sKT_Ud.js 內含字串 'TEST-001'，確認排除清單已上線
+    - target: Supabase Edge Functions
+      note: CI 之 Deploy Supabase job success；本次無函式原始碼變更
+  patient_impact: >
+    bundle 變更會使開著 App 的患者看到「系統已更新」橫幅。執行時間為 01:00 前後，
+    四名受試者當日回報均已完成，影響最小。
+  verification_method: >
+    以 bundle 內的字串常數驗證，不比對 hash——本機與 Vercel 的建置環境不同，
+    hash 本就會相異，比 hash 會得到假陰性。
 
 verification:
   - 全套 Vitest 33 files / 406 tests passed；npm run lint 無輸出；npm run build 成功
+  - CI run 31515380806 全綠：Deno、test、e2e、Deploy Supabase 四個 job 皆 success。
+    e2e 為本次關鍵關卡——researcher-flow 會斷言 TEST-001 列可見，若過濾點放錯層級此關必紅
   - RED 階段實際觀察到兩項新測試失敗，且數值與 production 一致（收案數 5、依從率 80.0%），
     確認測試確實咬住該缺陷而非恆真
   - 補登後重跑同一組 join：patients 五筆中除 TEST-001 外，四筆與對照表逐欄一致
@@ -102,6 +113,10 @@ verification:
 follow_ups:
   - pii_patients 補登 HSF-002 / WCC-001 / WCC-002，並順手修正 HSF-001 的 consent 欄位
   - HSF-001 補填 D14 實際回診日期
+  - check-adherence 亦以 study_status='active' 取得對象，TEST-001 在內，故會照排程對其
+    發出回報提醒。本次刻意未改：測試帳號收得到提醒，才驗證得了提醒功能本身。
+    此處與儀表板性質不同——儀表板是把測試資料混入研究統計，提醒則是測試該有的行為。
+    CSV 匯出同理保留，匯出為原始資料，在該層過濾會使匯出結果與資料庫對不起來。
   - 評估在每日摘要排程加入一致性檢核：patients 有紀錄但 pii_patients 無對應者即告警。
     此檢核讀不到 Excel，只能守住加密資料表這一側，但足以在收案當天而非五天後發現漏登。
 
