@@ -2,7 +2,7 @@ date: 2026-08-12
 weekday: 三
 phase: 收案執行
 day: 21        # 自 2026-07-23 首例收案起算
-objective: 核對收案對照表與正式資料庫，補齊漏登之個案並修正過期欄位
+objective: 核對收案對照表與正式資料庫，補齊漏登之個案；並將測試帳號自儀表板統計中排除
 
 # 註：本檔位於公開 repo，只記錄機制層級資訊。
 # 受試者姓名、病歷號、聯絡方式一律不寫入，僅以 Study ID 指涉。
@@ -42,19 +42,58 @@ findings:
     detail: patients 為 consent_signed=true / consent_date=2026-07-23，pii_patients 為 false / null
     note: 與 2026-07 已決議「紙本同意書為準」之簽名欄議題無關，此處純為兩表未同步
 
+  - id: 5
+    severity: high
+    issue: 研究人員儀表板把 TEST-001 計入收案數與依從率
+    detail: >
+      v_adherence_summary 只排除 study_status='withdrawn'，TEST-001 為 active 故納入。
+      該帳號不回報症狀，total_reports 恆為 0，而 expected_reports 依手術日 2026-07-18
+      逐日累加，當日已達 12。
+    impact: >
+      四名真實受試者依從率皆為 100%，儀表板卻顯示 80.0%，收案數顯示 5 而非 4。
+      誤差每日擴大，直到 30 天上限為止。
+    note: 由對照表核對順帶發現——查 TEST-001 為何不在對照表時才注意到它進了統計分母
+
 actions:
   performed:
     - 對照表補入 HSF-002 第 4 列：Study ID、手術日期 2026-08-08、主刀 HSF、收案日期 2026-08-07、狀態追蹤中
     - 姓名與病歷號由 PI 當場提供後填入
     - WCC-001 / WCC-002 收案狀態改為「追蹤中」
     - 修改前先將原檔備份至工作區外（對照表為 gitignored 個資文件，備份不進版本控制）
+    - 儀表板統計與圖表排除 TEST-001（commit df48665）：
+      收案列表仍照常顯示該帳號，e2e/researcher-flow.spec.ts 會斷言該列可見
   not_performed:
     - id: pii_patients 補登三筆
       reason: 加密通行碼由 PI 單獨保管，不經過工作階段；已備妥 SQL 交由 PI 於 Supabase SQL editor 自行執行
     - id: HSF-001 第二次回診（D14）日期
       reason: 該案手術 07-24、D14 應為 08-07 且已逾期，但實際回診日期不在系統內，需由 PI 依門診紀錄填寫
 
+changes:
+  code:
+    - ResearcherDashboard 新增 NON_SUBJECT_STUDY_IDS 與 isStudySubject()，
+      統計（ENROLLED / ADHERENCE / of N total）與 ResearcherCharts 改吃過濾後的陣列
+    - 過濾點刻意放在統計層而非 getAllPatients()，避免同時把收案列表的該列藏掉
+  tests:
+    - ResearcherDashboard.test.jsx 新增 3 項：收案數排除、依從率分母排除、列表仍可見
+  unchanged:
+    - v_adherence_summary 未變更。收案期間不動 production schema，
+      且該 view 是 e2e 與離線分析共用的資料來源
+    - CSV 匯出未受影響：TEST-001 無 symptom_reports，本來就不會出現在匯出結果中
+
+deployment:
+  status: 尚未部署
+  blocker: GitHub token 失效，git push 無法完成；Vercel 靠 git integration 觸發，故 production 仍為舊版
+  pending_commits:
+    - 44ccee6 docs(journal)
+    - df48665 fix(dashboard)
+  note: >
+    本次 bundle hash 由 index-CG1mqW4C.js 變為 index-BHGEQRpc.js，
+    部署後開著 App 的患者會看到「系統已更新」橫幅。宜於夜間執行。
+
 verification:
+  - 全套 Vitest 33 files / 406 tests passed；npm run lint 無輸出；npm run build 成功
+  - RED 階段實際觀察到兩項新測試失敗，且數值與 production 一致（收案數 5、依從率 80.0%），
+    確認測試確實咬住該缺陷而非恆真
   - 補登後重跑同一組 join：patients 五筆中除 TEST-001 外，四筆與對照表逐欄一致
   - 手術日期、收案日期、主刀醫師三欄與資料庫完全相符；邀請碼使用時間亦與收案日期吻合
   - 檔案結構未受損：兩組 data validation（主刀醫師 F6:F55、收案狀態 L6:L55）與四組合併儲存格皆保留
