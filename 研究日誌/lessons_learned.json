@@ -18,6 +18,14 @@
     "principle_scope": {
       "project": "僅適用本專案",
       "general": "可帶到其他專案"
+    },
+    "used_on": {
+      "purpose": "某則教訓實際被拿來解決問題時補一筆。累積後可看出哪一類寫法真的有用，據以調整之後要多寫什麼、少寫什麼。缺少這個回饋，紀錄品質會隨時間漂移而無人察覺。",
+      "fields": {
+        "date": "使用日期",
+        "context": "當時在處理什麼",
+        "value": "這則教訓實際起了什麼作用"
+      }
     }
   },
 
@@ -49,6 +57,13 @@
       "recurrence_signals": [
         "以「API 回 200」或「provider 顯示 delivered」當作使用者收得到信",
         "寄信問題先猜垃圾信匣，而非逐層定位"
+      ],
+      "used_on": [
+        {
+          "date": "2026-08-12",
+          "context": "追查研究人員的忘記密碼信為何沒有可點擊的連結",
+          "value": "該日日誌記載當天已在 production 完整驗證過 recovery 流程，直接推翻『template 壞了』的假設。變數因此從『template 是否正確』轉為『為什麼那次可以這次不行』，收件端差異才浮現。若無此紀錄，會繼續在 template 與 Supabase 設定裡繞。"
+        }
       ],
       "retrospective_note": {
         "added": "2026-08-12",

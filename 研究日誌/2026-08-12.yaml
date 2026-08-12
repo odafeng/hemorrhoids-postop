@@ -86,6 +86,48 @@ findings:
       且現有受試者信箱多為 Gmail。研究人員可透過 admin-reset-password 代為重設，
       自助重設在 template 修正前仍不可靠。
 
+# 走錯的路。日誌若只記通往答案的那條線，這些會全部流失，
+# 下一個遇到同樣症狀的人得重走一次。
+hypotheses_ruled_out:
+  - hypothesis: 重設信沒有連結，是因為 Reset Password template 少了 {{ .ConfirmationURL }}
+    disproved_by: PI 貼出 Dashboard 的 template，確為 Supabase 預設版本且含該變數
+    note: 這是第一個假設，也是最直覺的一個。若未查證，會一路往 template 語法與跳脫規則鑽
+
+  - hypothesis: 連結其實是好的，只是當事人沒有點
+    disproved_by: >
+      auth log 顯示兩次 /recover 之後，沒有任何一次成功的 type=recovery verify。
+      期間五次 /verify 全為 "One-time token not found"，時序上對應的是重複點擊
+      已用過的「邀請」連結，不是重設連結
+    note: 排除這一項，才確定問題在信件本身而非使用者行為
+
+  - hypothesis: 受邀帳號的 encrypted_password 是空字串，所以沒有密碼可用
+    disproved_by: >
+      crypt('', encrypted_password) = encrypted_password 為 false，且長度 60、前綴 $2a$，
+      是一組真實存在但無人知曉的隨機密碼
+    note: >
+      這個差別直接影響嚴重度判斷。若只是空密碼，或許還有其他登入途徑；
+      確認是隨機密碼之後才確定當事人「永遠」登不進去，也才確定必須強制設定密碼
+
+  - hypothesis: 把 index.html 的偵測條件從 type=recovery 放寬到 recovery|invite 就夠了
+    disproved_by: >
+      supabase-js 在 client 建構時（import 期間）即消費並清除 URL hash。
+      受邀者只要在設定密碼前重整或關閉分頁，判斷依據就消失，帳號永久鎖死——
+      正是這次要修的失效模式本身
+    note: 因此改為讀帳號上的 user_metadata.invited_at / password_set_at
+
+  - hypothesis: 本機建置與線上的 bundle hash 不同，代表新版沒上線
+    disproved_by: >
+      工作目錄乾淨且 HEAD 與部署 commit 相同，hash 仍相異。
+      bundle 會 inline VITE_* 環境變數，本機與 Vercel 的值不同，內容不同則 hash 必然不同
+    note: 比 hash 每次都會得到假陰性。改以字串比對
+
+  - hypothesis: 線上仍回舊 bundle，代表這次部署失敗
+    disproved_by: >
+      get_deployment 顯示 readyState=READY、aliasError=null、alias 含正式網址。
+      實為 edge 節點快取（x-vercel-cache: HIT，age 單調遞增，query string cache buster 無效），
+      至下一次部署才失效
+    note: 讀到舊 bundle 應先查部署狀態，不要直接判定失敗而重推一次
+
 actions:
   performed:
     - 對照表補入 HSF-002 第 4 列：Study ID、手術日期 2026-08-08、主刀 HSF、收案日期 2026-08-07、狀態追蹤中
