@@ -319,12 +319,12 @@ export default function NotificationSetup({ studyId, isDemo }) {
           )}
           {testStatus === 'denied' && (
             <div style={{ fontSize: 'var(--font-xs)', color: 'var(--warning)', marginTop: 6, lineHeight: 1.4 }}>
-              ⚠ 通知權限未授權。請先開啟上方每日提醒開關並允許通知權限。
+              ⚠ 通知權限未授權。請先開啟上方回報提醒開關並允許通知權限。
             </div>
           )}
           {testStatus === 'no-sub' && (
             <div style={{ fontSize: 'var(--font-xs)', color: 'var(--warning)', marginTop: 6, lineHeight: 1.4 }}>
-              ⚠ 尚未註冊推播訂閱。請先關掉每日提醒開關再重新打開，讓 App 重新向伺服器註冊。
+              ⚠ 尚未註冊推播訂閱。請先關掉回報提醒開關再重新打開，讓 App 重新向伺服器註冊。
             </div>
           )}
           {testStatus === 'demo' && (

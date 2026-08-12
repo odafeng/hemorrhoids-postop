@@ -60,6 +60,17 @@ describe('NotificationSetup', () => {
     expect(screen.getByLabelText('開啟通知')).toBeInTheDocument();
   });
 
+  // Renaming the card to 回報提醒 left two error messages still telling patients to
+  // find the 每日提醒 switch, and they only show in states a default render never
+  // reaches. Checking the source catches those; checking the DOM did not.
+  it('has no copy left pointing at the old card name', async () => {
+    const { readFileSync } = await import('node:fs');
+    // Path from the project root, not import.meta.url — under jsdom that is an
+    // http: URL and readFileSync rejects it.
+    const src = readFileSync('src/components/NotificationSetup.jsx', 'utf8');
+    expect(src).not.toContain('每日提醒');
+  });
+
   it('shows description when notifications are off', () => {
     render(<NotificationSetup {...defaultProps} />);
     expect(screen.getByText(/開啟後，需回報的日子/)).toBeInTheDocument();
