@@ -54,6 +54,24 @@ describe('SetNewPassword', () => {
     expect(mocks.updatePassword).not.toHaveBeenCalled();
   });
 
+  // An invited researcher reaches this screen holding a random password GoTrue
+  // generated. "稍後再設定" logs them out, and there is no password on earth
+  // that gets them back in — so the escape hatch must not exist here.
+  it('offers no way out of the invite flow, where skipping means lockout', () => {
+    render(<SetNewPassword email="r@example.com" reason="invite" onDone={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.queryByText('稍後再設定')).not.toBeInTheDocument();
+  });
+
+  it('still lets a forgotten-password user back out', () => {
+    render(<SetNewPassword email="p@example.com" reason="recovery" onDone={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.getByText('稍後再設定')).toBeInTheDocument();
+  });
+
+  it('greets the invited researcher instead of talking about a "new" password', () => {
+    render(<SetNewPassword email="r@example.com" reason="invite" onDone={vi.fn()} />);
+    expect(screen.getByText(/歡迎加入/)).toBeInTheDocument();
+  });
+
   it('keeps the user on the screen when the server rejects the change', async () => {
     const onDone = vi.fn();
     // Recovery links are single-use and time-limited; an expired one must not

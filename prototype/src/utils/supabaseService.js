@@ -53,10 +53,17 @@ export async function resetPassword(email) {
  * password. Without this call the user lands back in the app still holding the
  * old (or, after an admin rotation, an unknown) password, which is exactly what
  * "the reset link just takes me to the app" looks like.
+ *
+ * password_set_at answers the invited_at stamp researcher-invite leaves behind:
+ * until it exists, useAuth keeps routing the account back to this screen. The
+ * two travel in one call so a saved password can never be recorded as unsaved.
  */
 export async function updatePassword(newPassword) {
   if (!supabase) throw new Error('Supabase not configured');
-  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  const { error } = await supabase.auth.updateUser({
+    password: newPassword,
+    data: { password_set_at: new Date().toISOString() },
+  });
   if (error) throw error;
 }
 

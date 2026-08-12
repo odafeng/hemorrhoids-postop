@@ -10,7 +10,8 @@ import * as I from '../components/Icons';
  * other login and dropped straight into the dashboard, so "忘記密碼" appeared
  * to do nothing and the account kept its old password.
  */
-export default function SetNewPassword({ email, onDone, onCancel }) {
+export default function SetNewPassword({ email, reason = 'recovery', onDone, onCancel }) {
+  const isInvite = reason === 'invite';
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -47,7 +48,9 @@ export default function SetNewPassword({ email, onDone, onCancel }) {
       <div className="login-hosp">高雄榮總 · 大腸直腸外科</div>
       <h1 className="login-title">設定新密碼</h1>
       <p className="login-sub">
-        {email ? `${email} · 請輸入您的新密碼` : '請輸入您的新密碼'}
+        {[email, isInvite ? '歡迎加入，請設定您的登入密碼' : '請輸入您的新密碼']
+          .filter(Boolean)
+          .join(' · ')}
       </p>
 
       <form onSubmit={handleSubmit}>
@@ -102,7 +105,11 @@ export default function SetNewPassword({ email, onDone, onCancel }) {
           {!saving && <I.Chevron width={14} height={14} />}
         </button>
 
-        {onCancel && (
+        {/* Recovery can be postponed — the old password still works. An invite
+            cannot: backing out logs the researcher into nothing, because the
+            password on their account is one GoTrue invented and never showed
+            anybody. */}
+        {onCancel && !isInvite && (
           <button
             type="button"
             onClick={onCancel}

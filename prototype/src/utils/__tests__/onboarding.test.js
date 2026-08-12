@@ -53,6 +53,28 @@ const onboardedSession = {
   },
 };
 
+// researcher-invite stamps user_metadata.invited_at when it calls
+// inviteUserByEmail. GoTrue gives that account a RANDOM password nobody knows,
+// so until the researcher picks one they cannot log in again.
+const invitedResearcherSession = {
+  user: {
+    id: 'user-2',
+    email: 'r@example.com',
+    app_metadata: { role: 'researcher', surgeon_id: 'HSF' },
+    user_metadata: { display_name: '王研究', invited_at: '2026-08-12T04:32:23.914Z' },
+  },
+};
+
+const settledResearcherSession = {
+  user: {
+    ...invitedResearcherSession.user,
+    user_metadata: {
+      ...invitedResearcherSession.user.user_metadata,
+      password_set_at: '2026-08-12T04:40:00.000Z',
+    },
+  },
+};
+
 describe('useAuth — invite token hand-off', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -126,7 +148,7 @@ describe('useAuth — password recovery detection', () => {
     const { useAuth } = await import('../useAuth');
     const { result } = renderHook(() => useAuth());
     await waitFor(() => expect(result.current.authState).toBe('loggedIn'));
-    expect(result.current.passwordRecovery).toBe(false);
+    expect(result.current.passwordSetup).toBeNull();
   });
 
   // supabase-js consumes the URL hash when the client is constructed — at
@@ -137,7 +159,7 @@ describe('useAuth — password recovery detection', () => {
     window.__PASSWORD_RECOVERY__ = true;
     const { useAuth } = await import('../useAuth');
     const { result } = renderHook(() => useAuth());
-    expect(result.current.passwordRecovery).toBe(true);
+    expect(result.current.passwordSetup).toBe('recovery');
   });
 
   it('also reacts to a live PASSWORD_RECOVERY event', async () => {
@@ -150,21 +172,21 @@ describe('useAuth — password recovery detection', () => {
     const { useAuth } = await import('../useAuth');
     const { result } = renderHook(() => useAuth());
     await waitFor(() => expect(emit).toBeTypeOf('function'));
-    expect(result.current.passwordRecovery).toBe(false);
+    expect(result.current.passwordSetup).toBeNull();
 
     await act(async () => { await emit('PASSWORD_RECOVERY', onboardedSession); });
-    expect(result.current.passwordRecovery).toBe(true);
+    expect(result.current.passwordSetup).toBe('recovery');
   });
 
   it('clears the flag once the new password is saved', async () => {
     window.__PASSWORD_RECOVERY__ = true;
     const { useAuth } = await import('../useAuth');
     const { result } = renderHook(() => useAuth());
-    expect(result.current.passwordRecovery).toBe(true);
+    expect(result.current.passwordSetup).toBe('recovery');
 
-    act(() => result.current.completePasswordRecovery());
+    act(() => result.current.completePasswordSetup());
 
-    expect(result.current.passwordRecovery).toBe(false);
+    expect(result.current.passwordSetup).toBeNull();
     // Also cleared on window, or a later re-mount would re-open the screen.
     expect(window.__PASSWORD_RECOVERY__).toBe(false);
   });
@@ -182,7 +204,75 @@ describe('useAuth — password recovery detection', () => {
     await waitFor(() => expect(emit).toBeTypeOf('function'));
 
     await act(async () => { await emit('SIGNED_OUT', null); });
-    expect(result.current.passwordRecovery).toBe(false);
+    expect(result.current.passwordSetup).toBeNull();
+  });
+});
+
+// An invited researcher lands on a session GoTrue created with a random
+// password. Nothing in the URL survives a reload, so detection has to come from
+// the account itself — otherwise closing the tab before choosing a password
+// locks them out of an account they can never sign into again.
+describe('useAuth — invited researcher must choose a password', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionStorage.clear();
+    delete window.__PASSWORD_RECOVERY__;
+    mocks.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } });
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete window.__PASSWORD_RECOVERY__;
+  });
+
+  it('demands a password on the load that follows the invite link', async () => {
+    mocks.getSession.mockResolvedValue(invitedResearcherSession);
+    const { useAuth } = await import('../useAuth');
+    const { result } = renderHook(() => useAuth());
+
+    await waitFor(() => expect(result.current.authState).toBe('loggedIn'));
+    expect(result.current.passwordSetup).toBe('invite');
+  });
+
+  // The regression that matters: the invite hash is gone on the second load.
+  it('still demands one after a reload, with no URL hash left to read', async () => {
+    mocks.getSession.mockResolvedValue(invitedResearcherSession);
+    const { useAuth } = await import('../useAuth');
+    const { result } = renderHook(() => useAuth());
+
+    await waitFor(() => expect(result.current.authState).toBe('loggedIn'));
+    // Nothing was ever written to window — detection came from the account.
+    expect(window.__PASSWORD_RECOVERY__).toBeUndefined();
+    expect(result.current.passwordSetup).toBe('invite');
+  });
+
+  it('leaves a researcher who already chose one alone', async () => {
+    mocks.getSession.mockResolvedValue(settledResearcherSession);
+    const { useAuth } = await import('../useAuth');
+    const { result } = renderHook(() => useAuth());
+
+    await waitFor(() => expect(result.current.authState).toBe('loggedIn'));
+    expect(result.current.passwordSetup).toBeNull();
+  });
+
+  it('never fires for a patient, who picked a password at sign-up', async () => {
+    mocks.getSession.mockResolvedValue(onboardedSession);
+    const { useAuth } = await import('../useAuth');
+    const { result } = renderHook(() => useAuth());
+
+    await waitFor(() => expect(result.current.authState).toBe('loggedIn'));
+    expect(result.current.passwordSetup).toBeNull();
+  });
+
+  it('stops demanding one once the password is saved', async () => {
+    mocks.getSession.mockResolvedValue(invitedResearcherSession);
+    const { useAuth } = await import('../useAuth');
+    const { result } = renderHook(() => useAuth());
+
+    await waitFor(() => expect(result.current.passwordSetup).toBe('invite'));
+    act(() => result.current.completePasswordSetup());
+    expect(result.current.passwordSetup).toBeNull();
   });
 });
 

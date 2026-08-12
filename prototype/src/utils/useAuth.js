@@ -19,6 +19,18 @@ export function useAuth() {
   const [passwordRecovery, setPasswordRecovery] = useState(
     () => typeof window !== 'undefined' && window.__PASSWORD_RECOVERY__ === true,
   );
+  // Same problem, worse consequence: an invite link signs the researcher in
+  // against an account GoTrue stamped with a RANDOM password. Land them on the
+  // dashboard and they can never sign in again — the password they'd need does
+  // not exist anywhere.
+  //
+  // Detected from the account (user_metadata.invited_at, written by
+  // researcher-invite and answered by password_set_at) rather than from the URL,
+  // because supabase-js clears the hash on the first load. Reading the URL would
+  // mean a researcher who reloads before choosing a password is locked out for
+  // good, which is the failure this whole path exists to prevent.
+  const [inviteNeedsPassword, setInviteNeedsPassword] = useState(false);
+  const passwordSetup = passwordRecovery ? 'recovery' : inviteNeedsPassword ? 'invite' : null;
 
   const loadUserInfo = async (session, { attemptedSelfHeal = false } = {}) => {
     const user = session?.user;
@@ -37,6 +49,7 @@ export function useAuth() {
     const role = appMeta.role || 'patient';
     const surgeonId = appMeta.surgeon_id || null;
     const surgeryDate = userMeta.surgery_date || null;
+    setInviteNeedsPassword(!!userMeta.invited_at && !userMeta.password_set_at);
     // Staff accounts (researcher/pi) may not have a study_id — allow them
     // through so the router can direct them to the researcher dashboard.
     const isStaff = role === 'researcher' || role === 'pi';
@@ -159,6 +172,7 @@ export function useAuth() {
         setUserInfo(null);
         setIsDemo(false);
         setPasswordRecovery(false);
+        setInviteNeedsPassword(false);
       }
     });
 
@@ -222,14 +236,15 @@ export function useAuth() {
     }
   };
 
-  const completePasswordRecovery = () => {
+  const completePasswordSetup = () => {
     setPasswordRecovery(false);
+    setInviteNeedsPassword(false);
     if (typeof window !== 'undefined') window.__PASSWORD_RECOVERY__ = false;
   };
 
   return {
     authState, isDemo, userInfo, loadingTooLong, onboardError,
-    passwordRecovery, completePasswordRecovery,
+    passwordSetup, completePasswordSetup,
     handleLogin, handleLogout, syncSurgeryDate,
     setAuthState, setUserInfo,
   };

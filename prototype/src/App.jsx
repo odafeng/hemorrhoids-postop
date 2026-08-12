@@ -47,7 +47,7 @@ export default function App() {
   const queryClient = useQueryClient();
   const {
     authState, isDemo, userInfo, loadingTooLong, onboardError,
-    passwordRecovery, completePasswordRecovery,
+    passwordSetup, completePasswordSetup,
     handleLogin, handleLogout, syncSurgeryDate,
     setAuthState, setUserInfo,
   } = useAuth();
@@ -236,16 +236,18 @@ export default function App() {
     );
   }
 
-  // Password-recovery gate — must come BEFORE the consent gate. A recovery link
-  // only establishes a session; the password is unchanged until the user sets a
-  // new one. Gating this behind consent would leave a patient who forgot their
+  // Password gate — must come BEFORE the consent gate. Both routes here hold a
+  // session whose password is not one the user knows: a recovery link leaves the
+  // old password in place, and an invite leaves a random one nobody has ever
+  // seen. Gating this behind consent would leave a patient who forgot their
   // password stuck on a consent form they may have already signed, with no way
   // to reach the field that actually fixes their account.
-  if (passwordRecovery && authState === 'loggedIn' && !isDemo) {
+  if (passwordSetup && authState === 'loggedIn' && !isDemo) {
     return (
       <SetNewPassword
         email={userInfo?.email}
-        onDone={completePasswordRecovery}
+        reason={passwordSetup}
+        onDone={completePasswordSetup}
         onCancel={() => handleLogout(navigate)}
       />
     );
