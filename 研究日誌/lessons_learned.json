@@ -28,6 +28,7 @@
       }
     }
   },
+
   "lessons": [
     {
       "id": "LL-2026-08-05-01",
@@ -35,11 +36,7 @@
       "date_learned": "2026-08-05",
       "status": "resolved",
       "severity": "high",
-      "domains": [
-        "email-delivery",
-        "debugging",
-        "supabase"
-      ],
+      "domains": ["email-delivery", "debugging", "supabase"],
       "context": "研究人員邀請信未送達。當時專案仍使用 Supabase default SMTP。",
       "symptom": "App 顯示寄送成功，收件端始終沒有信。",
       "root_cause": {
@@ -47,9 +44,7 @@
       },
       "evidence": {
         "grade": "direct",
-        "items": [
-          "逐層檢查後定位到授權層，排除 inbox 與垃圾信分類"
-        ]
+        "items": ["逐層檢查後定位到授權層，排除 inbox 與垃圾信分類"]
       },
       "resolution": {
         "approach": "啟用 Custom SMTP（Resend），沿用既有供應商以免增加金鑰、DNS 與監控面。",
@@ -75,25 +70,18 @@
         "content": "當天的 production 驗證確實走完了收信、開連結、設密碼、重新登入，紀錄無誤。但它只涵蓋 inbox placement 的一種收件端（PI 的 Hotmail）。七天後同一條路徑在 Gmail 上失效——連結被呈現為純文字。這則教訓本身正確，只是它列的五層之後還有第六層：收件端如何『呈現』信件內容。見 LL-2026-08-12-03。"
       },
       "related": {
-        "lessons": [
-          "LL-2026-08-12-03"
-        ],
-        "journal": [
-          "2026-08-05.yaml"
-        ]
+        "lessons": ["LL-2026-08-12-03"],
+        "journal": ["2026-08-05.yaml"]
       }
     },
+
     {
       "id": "LL-2026-08-12-01",
       "title": "唯一的入口與唯一的補救，不可以依賴同一個東西",
       "date_learned": "2026-08-12",
       "status": "resolved",
       "severity": "high",
-      "domains": [
-        "auth",
-        "account-provisioning",
-        "resilience"
-      ],
+      "domains": ["auth", "account-provisioning", "resilience"],
       "context": "研究人員以邀請信開通帳號；忘記密碼亦以信件重設。兩者都經 email。",
       "symptom": "新進研究人員點開邀請信後直接進入儀表板，之後再也登不進去；按忘記密碼收到的信沒有可點擊的連結。",
       "root_cause": {
@@ -110,10 +98,7 @@
       },
       "resolution": {
         "approach": "把 email 移出關鍵路徑。帳號改由 PI 當場設定初始密碼並當面交付；首次登入強制更換。",
-        "commits": [
-          "ba4c1d7",
-          "a7d1c46"
-        ],
+        "commits": ["ba4c1d7", "a7d1c46"],
         "verification": "部署後查 auth.users，當事帳號已寫入 password_set_at，即他確實走完新流程，全程未寄出任何信件。"
       },
       "principle": {
@@ -125,30 +110,19 @@
         "帳號建立後 last_sign_in_at 有值但使用者回報無法登入"
       ],
       "related": {
-        "lessons": [
-          "LL-2026-08-12-02",
-          "LL-2026-08-12-03",
-          "LL-2026-08-12-06"
-        ],
-        "journal": [
-          "2026-08-12.yaml#findings.6"
-        ],
-        "memory": [
-          "researcher-accounts-no-invite-email"
-        ]
+        "lessons": ["LL-2026-08-12-02", "LL-2026-08-12-03", "LL-2026-08-12-06"],
+        "journal": ["2026-08-12.yaml#findings.6"],
+        "memory": ["researcher-accounts-no-invite-email"]
       }
     },
+
     {
       "id": "LL-2026-08-12-02",
       "title": "「還沒做完某件事」的狀態要放在帳號上，不要放在網址上",
       "date_learned": "2026-08-12",
       "status": "resolved",
       "severity": "high",
-      "domains": [
-        "auth",
-        "state-management",
-        "frontend"
-      ],
+      "domains": ["auth", "state-management", "frontend"],
       "context": "原本的密碼重設偵測讀 window.location.hash 中的 type=recovery，由 index.html 在任何模組載入前搶先記錄。",
       "symptom": "若沿用同樣做法處理邀請，使用者只要在設定密碼前重整或關掉分頁，hash 就消失，而帳號仍無可用密碼——永久鎖死。",
       "root_cause": {
@@ -179,28 +153,19 @@
         "需要在 HTML 內嵌 script 搶在框架之前讀取某個值"
       ],
       "related": {
-        "lessons": [
-          "LL-2026-08-12-01"
-        ],
-        "journal": [
-          "2026-08-12.yaml#changes.code"
-        ],
-        "memory": [
-          "researcher-accounts-no-invite-email"
-        ]
+        "lessons": ["LL-2026-08-12-01"],
+        "journal": ["2026-08-12.yaml#changes.code"],
+        "memory": ["researcher-accounts-no-invite-email"]
       }
     },
+
     {
       "id": "LL-2026-08-12-03",
       "title": "只驗證過一種收件端，不算驗證過寄信流程",
       "date_learned": "2026-08-12",
       "status": "open",
       "severity": "high",
-      "domains": [
-        "email-delivery",
-        "testing",
-        "supabase"
-      ],
+      "domains": ["email-delivery", "testing", "supabase"],
       "context": "2026-08-05 曾在 production 完成整段密碼重設驗證：收到信、開啟連結、設定新密碼、以新密碼登入。",
       "symptom": "2026-08-12 同一套 template、同一組 Resend SMTP，收件端為 Gmail 時，信中連結以純文字呈現，無法點擊。",
       "root_cause": {
@@ -233,30 +198,19 @@
         "同一 template 在某些人身上正常、某些人身上不正常"
       ],
       "related": {
-        "lessons": [
-          "LL-2026-08-12-01",
-          "LL-2026-08-05-01"
-        ],
-        "journal": [
-          "2026-08-05.yaml",
-          "2026-08-12.yaml#findings.7"
-        ],
-        "memory": [
-          "recovery-email-link-dead-in-gmail"
-        ]
+        "lessons": ["LL-2026-08-12-01", "LL-2026-08-05-01"],
+        "journal": ["2026-08-05.yaml", "2026-08-12.yaml#findings.7"],
+        "memory": ["recovery-email-link-dead-in-gmail"]
       }
     },
+
     {
       "id": "LL-2026-08-12-04",
       "title": "補救工具若走的是壞掉的那條路，它就不是補救工具",
       "date_learned": "2026-08-12",
       "status": "resolved",
       "severity": "high",
-      "domains": [
-        "auth",
-        "operations",
-        "design"
-      ],
+      "domains": ["auth", "operations", "design"],
       "context": "PI 儀表板提供「重寄啟用信」，用於處理未啟用的研究人員帳號。",
       "symptom": "該動作呼叫 resetPasswordForEmail，正是已知會送出無效連結的路徑。PI 唯一的補救手段本身就是壞的。",
       "root_cause": {
@@ -264,15 +218,11 @@
       },
       "evidence": {
         "grade": "direct",
-        "items": [
-          "researcher-manage/index.ts 的 resend_activation 分支直接呼叫 admin.auth.resetPasswordForEmail"
-        ]
+        "items": ["researcher-manage/index.ts 的 resend_activation 分支直接呼叫 admin.auth.resetPasswordForEmail"]
       },
       "resolution": {
         "approach": "改為 reset_initial_password：PI 直接設定一組新的初始密碼，並清除 password_set_at 使強制更換重新生效。",
-        "commits": [
-          "a7d1c46"
-        ],
+        "commits": ["a7d1c46"],
         "side_effect_handled": "errors.ts 的 SMTP 與寄信頻率兩個分支因不再寄信而永遠走不到，已一併移除，避免誤導後人。"
       },
       "principle": {
@@ -283,25 +233,18 @@
         "「重寄一次」「再試一次」類型的按鈕，其實只是重跑同一段程式"
       ],
       "related": {
-        "lessons": [
-          "LL-2026-08-12-01",
-          "LL-2026-08-12-05"
-        ],
-        "journal": [
-          "2026-08-12.yaml#actions.performed"
-        ]
+        "lessons": ["LL-2026-08-12-01", "LL-2026-08-12-05"],
+        "journal": ["2026-08-12.yaml#actions.performed"]
       }
     },
+
     {
       "id": "LL-2026-08-12-05",
       "title": "顯示條件會剛好把功能藏起來，不讓最需要的人看到",
       "date_learned": "2026-08-12",
       "status": "resolved",
       "severity": "medium",
-      "domains": [
-        "ui",
-        "operations"
-      ],
+      "domains": ["ui", "operations"],
       "context": "團隊列表的「重寄啟用信」按鈕條件為 !u.last_sign_in_at，即僅對從未登入者顯示。",
       "symptom": "被邀請信鎖住的帳號 last_sign_in_at 是有值的——他確實登入過一次，就是那一次之後再也進不來。按鈕對他隱藏。",
       "root_cause": {
@@ -309,15 +252,11 @@
       },
       "evidence": {
         "grade": "direct",
-        "items": [
-          "當事帳號 last_sign_in_at = 2026-08-12 04:38:22Z，即邀請連結 verify 的同一秒"
-        ]
+        "items": ["當事帳號 last_sign_in_at = 2026-08-12 04:38:22Z，即邀請連結 verify 的同一秒"]
       },
       "resolution": {
         "approach": "移除 !last_sign_in_at 條件，改為對所有非自己且未停用的帳號顯示。PI 替同事重設密碼是正當操作，且有 audit_trail 記錄。",
-        "commits": [
-          "a7d1c46"
-        ]
+        "commits": ["a7d1c46"]
       },
       "principle": {
         "statement": "用代理指標當顯示條件之前，先想清楚缺陷會不會製造出讓代理失準的狀態。修 bug 時要一併檢查它的處理工具是否看得見受害者。",
@@ -328,25 +267,18 @@
         "使用者說「我找不到那個按鈕」而不是「按了沒反應」"
       ],
       "related": {
-        "lessons": [
-          "LL-2026-08-12-04"
-        ],
-        "journal": [
-          "2026-08-12.yaml#changes.code"
-        ]
+        "lessons": ["LL-2026-08-12-04"],
+        "journal": ["2026-08-12.yaml#changes.code"]
       }
     },
+
     {
       "id": "LL-2026-08-12-06",
       "title": "前端與 Edge Function 的部署時間差，足以讓一次操作走錯版本",
       "date_learned": "2026-08-12",
       "status": "mitigated",
       "severity": "medium",
-      "domains": [
-        "deployment",
-        "ci-cd",
-        "operations"
-      ],
+      "domains": ["deployment", "ci-cd", "operations"],
       "context": "Vercel 由 git integration 直接觸發、不等 CI；Supabase Edge Functions 在 CI 末段才部署。",
       "symptom": "實測前端 13:21 上線、Edge Function 13:26 上線。這五分鐘內新版 UI 送出的 initial_password 會被舊版函式忽略，並回退成寄邀請信——正好是這次要移除的行為。",
       "root_cause": {
@@ -372,28 +304,19 @@
         "新增 API 欄位而舊版函式會靜默忽略（相對於明確報錯）"
       ],
       "related": {
-        "lessons": [
-          "LL-2026-08-12-07"
-        ],
-        "journal": [
-          "2026-08-12.yaml#deployment_auth.split_path_window"
-        ],
-        "memory": [
-          "deployment-topology",
-          "no-deploy-during-enrolment"
-        ]
+        "lessons": ["LL-2026-08-12-07"],
+        "journal": ["2026-08-12.yaml#deployment_auth.split_path_window"],
+        "memory": ["deployment-topology", "no-deploy-during-enrolment"]
       }
     },
+
     {
       "id": "LL-2026-08-12-07",
       "title": "驗證前端部署要比對字串，不要比對 bundle hash",
       "date_learned": "2026-08-12",
       "status": "resolved",
       "severity": "low",
-      "domains": [
-        "deployment",
-        "verification"
-      ],
+      "domains": ["deployment", "verification"],
       "context": "確認新版是否上線時，直覺是把本機 npm run build 的檔名 hash 與線上比對。",
       "symptom": "本機產生 index-D1EB6uPo.js，線上為 index-D211vysO.js。工作目錄乾淨、commit 相同，hash 卻不同。",
       "root_cause": {
@@ -419,44 +342,35 @@
         "部署顯示成功但線上看起來沒變"
       ],
       "related": {
-        "lessons": [
-          "LL-2026-08-12-06"
-        ],
-        "journal": [
-          "2026-08-12.yaml#deployment.verification_method"
-        ],
-        "memory": [
-          "deployment-topology"
-        ]
+        "lessons": ["LL-2026-08-12-06"],
+        "journal": ["2026-08-12.yaml#deployment.verification_method"],
+        "memory": ["deployment-topology"]
+      },
+      "limits": {
+        "statement": "此法的前提是改動帶有新增或移除的使用者可見字串。純邏輯改動經 minify 後函式名與註解都不存在，沒有字串可比對，硬套會造出假綠燈——比不驗證更危險，因為它看起來已經確認過。",
+        "workaround": "改用三項有對照的證據：(1) 以本地 build 產物中該邏輯 minify 後的實際樣子當 pattern（例如 -13)%7==0），不要自己臆測；(2) 保留改動前的舊 bundle 當對照組，pattern 在新 bundle 命中、舊 bundle 零命中才算數；(3) 以 Vercel deployment 的 githubCommitSha 確認部署的就是該 commit。"
       },
       "used_on": [
         {
           "date": "2026-08-12",
-          "what": "傍晚修提醒卡片文案時照此驗證：grep 到新增的「伺服器推播固定於」、確認移除的「若未回報將收到提醒」歸零，一次確認上線",
+          "what": "修提醒卡片文案後照此驗證：grep 到新增的「伺服器推播固定於」、確認移除的「若未回報將收到提醒」歸零",
           "outcome": "有效"
         },
         {
           "date": "2026-08-12",
-          "what": "同日稍後把同一方法套到純邏輯改動（isReportDay），得到假陽性：grep -c \"isReportDay\\|%7\" 回報 1，但 isReportDay 命中 0（minify 後函式名不存在），命中的是別處的 %7=；且當時 bundle 根本還沒換版",
+          "what": "同日稍後把同一方法套到純邏輯改動（isReportDay），得到假陽性：grep -c \"isReportDay\\|%7\" 回報 1，但 isReportDay 命中 0（minify 後函式名不存在），命中的是別處的 %7=；且當時 bundle 尚未換版",
           "outcome": "暴露適用範圍限制，見 limits"
         }
-      ],
-      "limits": {
-        "statement": "此法的前提是改動帶有新增或移除的使用者可見字串。純邏輯改動經 minify 後函式名與註解都不存在，沒有字串可比對，硬套會造出假綠燈——比不驗證更危險，因為它看起來已經確認過。",
-        "workaround": "改用三項有對照的證據：(1) 本地 build 產物中該邏輯 minify 後的實際樣子當 pattern（例如 -13)%7==0），不要自己臆測；(2) 保留改動前的舊 bundle 當對照組，該 pattern 在新 bundle 命中、舊 bundle 零命中才算數；(3) 以 Vercel deployment 的 githubCommitSha 確認部署的就是該 commit。"
-      }
+      ]
     },
+
     {
       "id": "LL-2026-08-12-08",
       "title": "系統紀錄重建出來的使用者行為，比使用者的描述精確",
       "date_learned": "2026-08-12",
       "status": "resolved",
       "severity": "medium",
-      "domains": [
-        "debugging",
-        "methodology",
-        "supabase"
-      ],
+      "domains": ["debugging", "methodology", "supabase"],
       "context": "回報內容為「點開邀請信直接登入」與「重設信沒有連結」，兩句話都正確但不足以定位根因。",
       "symptom": "初期假設是 email template 缺少變數。PI 貼出 template 後推翻——變數確實存在。",
       "root_cause": {
@@ -488,26 +402,18 @@
         "第一個假設被推翻後，直覺是換一個假設而不是去找證據"
       ],
       "related": {
-        "lessons": [
-          "LL-2026-08-12-01",
-          "LL-2026-08-12-03"
-        ],
-        "journal": [
-          "2026-08-12.yaml#verification"
-        ]
+        "lessons": ["LL-2026-08-12-01", "LL-2026-08-12-03"],
+        "journal": ["2026-08-12.yaml#verification"]
       }
     },
+
     {
       "id": "LL-2026-08-12-09",
       "title": "研究人員帳號不共用弱密碼，理由是資料範圍與稽核歸屬",
       "date_learned": "2026-08-12",
       "status": "resolved",
       "severity": "high",
-      "domains": [
-        "security",
-        "irb",
-        "decision-record"
-      ],
+      "domains": ["security", "irb", "decision-record"],
       "context": "流程繁瑣促使 PI 提議：研究人員密碼一律預設 123456。",
       "decision": "不採用。改為 PI 當場設定各自的初始密碼，並要求至少 8 字元（高於 Supabase 的 6）。",
       "rationale": [
@@ -522,17 +428,12 @@
         "scope": "general"
       },
       "related": {
-        "lessons": [
-          "LL-2026-08-12-01"
-        ],
-        "memory": [
-          "researcher-accounts-no-invite-email",
-          "pii-handling-policy",
-          "repo-is-public"
-        ]
+        "lessons": ["LL-2026-08-12-01"],
+        "memory": ["researcher-accounts-no-invite-email", "pii-handling-policy", "repo-is-public"]
       }
     }
   ],
+
   "open_items": [
     {
       "lesson_id": "LL-2026-08-12-03",
@@ -547,5 +448,6 @@
       "priority": "low"
     }
   ],
+
   "backlog_note": "2026-08-12 以前的每日 YAML 亦各自帶有 lesson 欄位（含 08-05 的寄信分層、08-12 上午的測試帳號污染統計、身分對應漏登）。尚未萃取進本檔，可另行補齊。"
 }
