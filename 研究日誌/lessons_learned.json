@@ -23,6 +23,44 @@
 
   "lessons": [
     {
+      "id": "LL-2026-08-05-01",
+      "title": "寄信是分層系統，每一層要分別記錄，不可互相代替",
+      "date_learned": "2026-08-05",
+      "status": "resolved",
+      "severity": "high",
+      "domains": ["email-delivery", "debugging", "supabase"],
+      "context": "研究人員邀請信未送達。當時專案仍使用 Supabase default SMTP。",
+      "symptom": "App 顯示寄送成功，收件端始終沒有信。",
+      "root_cause": {
+        "statement": "未設定 Custom SMTP 時，Supabase Auth 信件只寄得到 Supabase organization members。問題發生在 SMTP 授權層，不在 inbox 或垃圾信分類。"
+      },
+      "evidence": {
+        "grade": "direct",
+        "items": ["逐層檢查後定位到授權層，排除 inbox 與垃圾信分類"]
+      },
+      "resolution": {
+        "approach": "啟用 Custom SMTP（Resend），沿用既有供應商以免增加金鑰、DNS 與監控面。",
+        "scope_control": "只補 SMTP，保留 mailer_autoconfirm、Site URL 與 redirect allow list 不動"
+      },
+      "principle": {
+        "statement": "App 提交、Auth 建立 user、SMTP 接受、recipient server delivered、inbox placement 是五個獨立階段。任何一層的成功都不能推論下一層成功。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "以「API 回 200」或「provider 顯示 delivered」當作使用者收得到信",
+        "寄信問題先猜垃圾信匣，而非逐層定位"
+      ],
+      "retrospective_note": {
+        "added": "2026-08-12",
+        "content": "當天的 production 驗證確實走完了收信、開連結、設密碼、重新登入，紀錄無誤。但它只涵蓋 inbox placement 的一種收件端（PI 的 Hotmail）。七天後同一條路徑在 Gmail 上失效——連結被呈現為純文字。這則教訓本身正確，只是它列的五層之後還有第六層：收件端如何『呈現』信件內容。見 LL-2026-08-12-03。"
+      },
+      "related": {
+        "lessons": ["LL-2026-08-12-03"],
+        "journal": ["2026-08-05.yaml"]
+      }
+    },
+
+    {
       "id": "LL-2026-08-12-01",
       "title": "唯一的入口與唯一的補救，不可以依賴同一個東西",
       "date_learned": "2026-08-12",
@@ -145,7 +183,7 @@
         "同一 template 在某些人身上正常、某些人身上不正常"
       ],
       "related": {
-        "lessons": ["LL-2026-08-12-01"],
+        "lessons": ["LL-2026-08-12-01", "LL-2026-08-05-01"],
         "journal": ["2026-08-05.yaml", "2026-08-12.yaml#findings.7"],
         "memory": ["recovery-email-link-dead-in-gmail"]
       }
