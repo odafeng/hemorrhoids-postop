@@ -337,10 +337,21 @@ follow_ups:
     與 check-adherence 的查詢，屬行為變更，非收案期間該做的事
   - pending_notifications 是唯一不需通知權限就會出現的提醒（Dashboard 上的卡片）。
     未開權限的病人仍看得到，但必須主動開 App
-  - primary outcome 三個構成指標中有兩個目前量不準，已另立文件：
+  - primary outcome 的量測缺口已另立文件：
     docs/research/2026-08-12-primary-outcome-measurement-gaps.md。
-    含 app_activated 從未被寫入、adherence 分子分母不對稱、
-    以及本日提醒策略變更對前後段受試者不可直接合併的影響。四項待 PI 決定的定義問題列於文末
+    含三項：app_activated 從未被寫入（PI 已決定不使用，啟用率改以首次回報計）、
+    adherence 分子分母不對稱、推播投遞在受試者之間不一致。
+    另記本日提醒策略變更使前後段受試者不可直接合併。七項待辦列於文末
+  - WCC-001 的 notification_preferences.enabled 為 true 但 push_subscriptions 為 0 筆，
+    自 2026-08-04 收案起未曾收到伺服器推播。check-adherence 依訂閱發送，無端點者直接跳過。
+    兩端都看不出來：卡片有訂閱顯示「✓ 推播已開啟」、無訂閱顯示「✓ 已開啟」，
+    皆為綠色勾選；研究者儀表板未呈現訂閱狀態。
+    其 adherence 87.5% 係在無推播條件下達成，與其餘三位並非同一種介入投遞條件。
+    處理方式：請受試者關閉再開啟提醒開關以重新註冊；若為 iPhone 且未加入主畫面需先完成安裝
+  - FIH-001 於本日收案、翌日手術，notification_preferences 尚無其列，
+    進入追蹤期前應協助開啟並確認顯示「✓ 推播已開啟」
+  - 本機提醒（startReminderScheduler）是否曾實際發出，目前沒有任何一端有紀錄。
+    它不需要推播訂閱，但需要 App 開啟且已授予通知權限
   - pii_patients 補登 HSF-002 / WCC-001 / WCC-002，並順手修正 HSF-001 的 consent 欄位
   - HSF-001 補填 D14 實際回診日期
   - check-adherence 亦以 study_status='active' 取得對象，TEST-001 在內，故會照排程對其
