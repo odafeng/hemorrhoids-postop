@@ -1,0 +1,138 @@
+date: 2026-08-13
+weekday: 四
+phase: 收案執行
+day: 22        # 自 2026-07-23 首例收案起算
+objective: >
+  於收案對照表補登一筆回診日與一則不良事件備註、新增「出生日期」欄並補齊聯絡電話；
+  隨後查核 PI 手動補完的 pii_patients 五筆，確認欄位內容與對照表一致
+
+# 註：本檔位於公開 repo，只記錄機制層級資訊。
+# 受試者姓名、病歷號、出生日期、聯絡方式與加密金鑰一律不寫入，僅以 Study ID 指涉。
+
+trigger:
+  summary: >
+    PI 交付回診日與不良事件資訊要求填表；接著提供五筆出生日期（前一日 backfill 的卡點），
+    要求新增欄位；最後告知已手動填完 pii_patients，要求查核
+  note: >
+    出生日期到位使 2026-08-12 記錄的 pii_patients backfill 卡點解除——
+    birth_date_enc 為 NOT NULL，缺這五筆時 SQL 無法執行
+
+findings:
+  - id: 1
+    severity: low
+    issue: 前一次以 openpyxl 新增收案列時，只寫入值未套用資料列樣式
+    detail: >
+      ws['C10'] = value 只設 value，不動 StyleableObject。空白列預設是建檔時整段套下去的
+      「待填」樣式（新細明體／非粗體／無字色／靠左），與已填資料列（Noto Sans TC 粗體 #002060 置中）不同，
+      因此填值後樣式停在待填態。
+    detected_by: PI 目視發現，非程式檢查
+    fix: 填值後以 copy(上一列._style) 覆寫；單獨指定 font 會漏掉 alignment / border / fill
+    recurrence_signal: 每次新增收案都會重演，除非寫進收案 SOP
+
+  - id: 2
+    severity: high
+    issue: openpyxl insert_cols() 不搬合併範圍、資料驗證、欄寬——且全部靜默失效
+    detail: >
+      3.1.5 實測：insert_cols(5) 會搬 cell 物件（含 _style），但 merged_cells.ranges、
+      data_validations、column_dimensions 三者原地不動。官方文件明載「不管理相依性」。
+    consequence: >
+      標題列合併停在 A1:M1 會在新欄邊界斷開；主刀醫師與收案狀態的下拉清單會留在
+      F6:F55 / L6:L55，位移後套到錯誤欄位。兩者都不會拋錯。
+    fix: 插欄後手動把四個合併範圍 max_col 13→14、兩組 dv.sqref 位移、欄寬由右向左搬移
+
+  - id: 3
+    severity: medium
+    issue: pii_patients 中 HSF-001 的 phone_enc 為 NULL
+    detail: >
+      該列建於 2026-07-23（原始收案），不在本次補登的四筆內，因此補電話時被跳過。
+      對照表當日已填入該筆聯絡電話。
+    fix: 已補，並以相同金鑰加密
+
+  - id: 4
+    severity: low
+    issue: pii_patients.enrolled_at 記錄的是補登時刻，不是收案時刻
+    detail: >
+      補登的四筆全為 2026-08-12（寫入當下），但實際收案日分別為 08-04、08-04、08-07、08-12。
+      真正的收案時間在 patients.created_at，五筆皆與對照表相符。
+    consequence: 下游分析取 patients.created_at 故不受影響，但欄位名稱讀起來會誤導
+    fix: 已將四筆對齊 patients.created_at
+
+  - id: 5
+    severity: medium
+    issue: 本次多次解密 PII，pii_access_log 仍為 0 筆
+    detail: 即 2026-08-12 記錄的 ZONE A 未接線問題，稽核觸發器尚未建立
+    note: 這次是該缺口第一次在「真的有人讀 PII」的情況下被觀察到，而非僅由 schema 推論
+
+hypotheses_ruled_out:
+  - hypothesis: 插欄後可用 unmerge_cells() 再 merge_cells() 重設合併範圍
+    disproved_by: >
+      insert_cols 已把合併區內的 placeholder cell 物件搬走，unmerge_cells 內部執行
+      del self._cells[(1,5)] 時 KeyError: (1, 5)
+    note: >
+      改為直接修改 CellRange.max_col，完全不碰 _cells。
+      失敗發生在 wb.save() 之前，原檔未受影響——這也是先備份再改的價值
+
+  - hypothesis: 密文看不出內容，要驗證 pii_patients 一定得先拿到金鑰
+    disproved_by: >
+      pgp_sym_encrypt 的 overhead 固定 66 bytes 且與金鑰無關。以任意探測金鑰實測，
+      明文 7/8/9/10/12 bytes 對應密文 73/74/75/76/78 bytes。
+      據此可在不解密的前提下核對：病歷號位數、姓名字數、日期是否為十碼 YYYY-MM-DD
+    note: >
+      這一輪先驗掉了「有沒有填、格式對不對」，也正是靠它發現 phone_enc 長度不符預期。
+      但長度相同的兩筆互換（如兩筆皆為 8 碼病歷號、3 字姓名）驗不出來，
+      要排除錯位仍須解密——這個界線在回報時必須講明，否則會把結構完整誤讀成內容正確
+
+  - hypothesis: 資料庫與對照表的電話格式一致
+    disproved_by: >
+      phone_enc 為 76 bytes → 明文 10 碼，資料庫存的是純數字；
+      對照表存的是含連字號的十二碼
+    note: 已採資料庫既有格式（純數字）為準，對照表保留連字號供人閱讀；比對時兩邊正規化
+
+actions:
+  - 對照表：補 HSF-001 第二次回診日、WCC-002 不良事件備註（術後第 6 天重返急診）
+  - 對照表：修正前次新增列的姓名／病歷號樣式
+  - 對照表：新增「出生日期」欄（插於病歷號之後），連帶修正合併範圍、資料驗證、欄寬
+  - 對照表：補齊五筆出生日期與四筆聯絡電話（一筆標記「未取得」）
+  - pii_patients：補 HSF-001 phone_enc、校正四筆 enrolled_at
+  - 每次改動前皆備份，備份檔名落在 .gitignore 的 收案對照表*.xlsx glob 內（已以 git check-ignore 確認）
+
+verification:
+  - 插欄後逐格比對舊 E..M 的值、字型、字色、底色、數值格式、對齊、框線，確認原樣落在 F..N
+  - 檔內無公式，故略過 LibreOffice recalc——該步驟會整份重寫，反而有動到樣式的風險
+  - pii_patients 五筆以 study_id 為鍵，對姓名／出生日期／病歷號／電話逐欄比對布林值，全數 true
+  - 修正後複驗，另加 enrolled_at 與 patients.created_at 的日期相符檢查，全數 true
+  - git status 確認對照表與兩份備份皆未進版控
+
+follow_ups:
+  - id: 1
+    item: consent_date 五筆皆為 NULL，而 consent_signed 皆為 true
+    status: 未處理
+    note: 對照表無此欄位，紙本同意書為正本，不擬推測日期。待 PI 決定是否以 patients.created_at 回填
+  - id: 2
+    item: 加密金鑰於本次對話中出現
+    status: 待 PI 決定
+    note: >
+      2026-08-12 的查證顯示對話紀錄會將此類值濾為 placeholder，多半未以可讀形式落盤，
+      但本機 session transcript 仍應視為敏感。若決定輪替，五筆可於單一 transaction 內重新加密
+  - id: 3
+    item: pii_access_log 稽核觸發器尚未建立
+    status: 未處理（延續 2026-08-12）
+  - id: 4
+    item: WCC-002 聯絡電話未取得
+    status: 未處理
+    note: >
+      該案為五人中唯一發生不良事件者（術後第 6 天重返急診），且三次回診皆未排定，
+      正是最需要能主動聯繫的一筆
+
+lesson: >
+  函式庫「不管理相依性」這句話要當成需求清單讀，不是免責聲明。openpyxl 的 insert_cols
+  會把最顯眼的東西（值與樣式）搬對，把不顯眼的東西（合併範圍、資料驗證、欄寬）留在原地，
+  而且兩者都不報錯。這種部分正確比完全不動更危險——檔案打開來看起來是對的。
+  凡是插欄插列，事後就要逐格比對位移前後的完整屬性，不能只看值。
+
+lesson_ciphertext_length: >
+  pgp_sym_encrypt 的密文長度洩漏明文長度（固定 66 bytes overhead，與金鑰無關），
+  這在驗證情境下是可用的資源：不必持有金鑰就能核對欄位是否填了、位數對不對、格式有沒有跑掉。
+  本次 phone_enc 的格式差異就是這樣發現的。
+  但要同時記住它的上界——長度相同的兩筆互換驗不出來。回報時若不講明這條界線，
+  「結構完整」會被讀成「內容正確」，而這兩件事差得很遠。
