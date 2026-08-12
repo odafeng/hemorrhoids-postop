@@ -47,6 +47,7 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
   const [researcherName, setResearcherName] = useState('');
   const [researcherRole, setResearcherRole] = useState('researcher');
   const [researcherSurgeon, setResearcherSurgeon] = useState('HSF');
+  const [researcherPassword, setResearcherPassword] = useState('');
   const [researcherInviting, setResearcherInviting] = useState(false);
   const [researcherResult, setResearcherResult] = useState('');
   const [researcherError, setResearcherError] = useState('');
@@ -57,7 +58,7 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
   const [teamError, setTeamError] = useState('');
   const [teamNotice, setTeamNotice] = useState('');
   const [banningId, setBanningId] = useState(null);
-  const [resendingId, setResendingId] = useState(null);
+  const [resettingId, setResettingId] = useState(null);
 
   const loadTeam = async () => {
     setTeamLoading(true); setTeamError('');
@@ -91,18 +92,25 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
     }
   };
 
-  const resendActivation = async (u) => {
-    if (!window.confirm(`重新寄送設定密碼信給「${u.display_name || u.email}」嗎？`)) return;
+  const resetInitialPassword = async (u) => {
+    const pw = window.prompt(
+      `替「${u.display_name || u.email}」設定新的初始密碼（至少 8 個字元）。\n設定後請當面或用 LINE 告訴本人，他下次登入時必須改掉。`,
+    );
+    if (pw === null) return;
     setTeamError('');
     setTeamNotice('');
-    setResendingId(u.id);
+    if (pw.length < 8) {
+      setTeamError('初始密碼至少需要 8 個字元');
+      return;
+    }
+    setResettingId(u.id);
     try {
-      await sb.resendResearcherActivation(u.id);
-      setTeamNotice(`已提交設定密碼信到 ${u.email}`);
+      await sb.resetResearcherInitialPassword(u.id, pw);
+      setTeamNotice(`已重設 ${u.email} 的初始密碼，請把新密碼交給本人`);
     } catch (err) {
-      setTeamError(err?.message || '重新寄送失敗');
+      setTeamError(err?.message || '重設失敗');
     } finally {
-      setResendingId(null);
+      setResettingId(null);
     }
   };
 
@@ -145,6 +153,9 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
     if (researcherRole === 'researcher' && !researcherSurgeon) {
       setResearcherError('請選擇所屬主刀醫師'); return;
     }
+    if (researcherPassword.length < 8) {
+      setResearcherError('初始密碼至少需要 8 個字元'); return;
+    }
     setResearcherInviting(true);
     try {
       await sb.inviteResearcher(
@@ -152,13 +163,15 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
         researcherName.trim(),
         researcherRole,
         researcherSurgeon || null,
+        researcherPassword,
       );
-      setResearcherResult(`✓ 已提交邀請信寄送至 ${researcherEmail.trim()}`);
+      setResearcherResult(`✓ 已建立 ${researcherEmail.trim()}，請把初始密碼交給本人。他首次登入時系統會要求改成自己的密碼。`);
       setResearcherEmail('');
       setResearcherName('');
+      setResearcherPassword('');
       loadTeam();
     } catch (err) {
-      setResearcherError(err?.message || '邀請失敗');
+      setResearcherError(err?.message || '建立帳號失敗');
     } finally {
       setResearcherInviting(false);
     }
@@ -527,7 +540,7 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
             </div>
           </div>
           <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 12, lineHeight: 1.55 }}>
-            寄出邀請信，對方點連結後設定密碼即可登入。
+            當場建立帳號，把初始密碼當面或用 LINE 交給對方。不寄信，所以不會有信收不到或連結失效的問題。對方首次登入時，系統會要求他改成自己的密碼。
           </p>
           <div className="input-group">
             <label className="input-lbl">Email</label>
@@ -575,8 +588,18 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
                 : 'PI 不受限制；設定只影響手術紀錄的著作歸屬'}
             </div>
           </div>
+          <div className="input-group">
+            <label className="input-lbl">初始密碼</label>
+            <input className="input" type="text" placeholder="至少 8 個字元"
+              value={researcherPassword}
+              autoComplete="off"
+              onChange={(e) => setResearcherPassword(e.target.value)} />
+            <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em' }}>
+              明碼顯示，方便你唸給對方聽；他登入後必須改掉
+            </div>
+          </div>
           <button className="btn btn-primary" onClick={handleInviteResearcher} disabled={researcherInviting}>
-            {researcherInviting ? '寄送中…' : <>寄出邀請信 <I.Send width={14} height={14} /></>}
+            {researcherInviting ? '建立中…' : <>建立帳號 <I.Chevron width={14} height={14} /></>}
           </button>
 
           {researcherError && (
@@ -700,18 +723,23 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
                       )}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      {!isSelf && !isBanned && !u.last_sign_in_at && (
+                      {/* Not gated on last_sign_in_at any more. The accounts
+                          most likely to need this signed in exactly once, off an
+                          invite link, and never learned a password they could
+                          use again — hiding the button from them left the PI
+                          with no repair tool at all. */}
+                      {!isSelf && !isBanned && (
                         <button type="button"
-                          aria-label={`重新寄送${u.display_name || u.email}的設定密碼信`}
-                          onClick={() => resendActivation(u)}
-                          disabled={resendingId === u.id}
+                          aria-label={`重設${u.display_name || u.email}的初始密碼`}
+                          onClick={() => resetInitialPassword(u)}
+                          disabled={resettingId === u.id}
                           style={{
                             background: 'var(--accent-soft)', border: '1px solid var(--accent)',
                             color: 'var(--accent)', borderRadius: 6, padding: '4px 10px',
                             fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)',
                             whiteSpace: 'nowrap',
                           }}>
-                          {resendingId === u.id ? '寄送中…' : '重寄啟用信'}
+                          {resettingId === u.id ? '重設中…' : '重設密碼'}
                         </button>
                       )}
                       {!isSelf && (

@@ -1,6 +1,14 @@
 // Supabase Edge Function: researcher-invite
-// PI invites a researcher (or another PI) by email.
-// Creates an auth.users row with role metadata and sends a magic-link invite email.
+// PI adds a researcher (or another PI) to the study team.
+// Creates a confirmed auth.users row with role metadata and an initial password
+// the PI hands over directly. No email is sent.
+//
+// This used to call inviteUserByEmail. That flow left the account holding a
+// random password GoTrue showed nobody, so it depended on the emailed link
+// working — and when the reset mail turned out to carry no usable link, the
+// invitee had no way in at all. Handing the password over out-of-band removes
+// mail delivery from the critical path; user_metadata.invited_at still forces
+// the researcher to replace the PI's password on first login.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -61,6 +69,7 @@ Deno.serve(async (req: Request) => {
     const displayName: string = (body.display_name || "").trim();
     const role: string = body.role === "pi" ? "pi" : "researcher";
     const surgeonId: string | null = (body.surgeon_id || "").trim().toUpperCase() || null;
+    const initialPassword: string = body.initial_password || "";
 
     const SURGEONS = ["HSF", "HCW", "WJH", "CPT", "WCC", "LMH", "CYH", "FIH"];
 
@@ -72,6 +81,12 @@ Deno.serve(async (req: Request) => {
     }
     if (!displayName) {
       return new Response(JSON.stringify({ error: "請輸入研究人員姓名" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (initialPassword.length < 8) {
+      return new Response(JSON.stringify({ error: "初始密碼至少需要 8 個字元" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -91,17 +106,27 @@ Deno.serve(async (req: Request) => {
 
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Send invitation email. Only cosmetic / non-security fields go into
+    // Create the account outright. Only cosmetic / non-security fields go into
     // user_metadata here (display_name, invited_by). Security-critical
     // claims (role, surgeon_id) are written to app_metadata below via
     // updateUserById, which is NOT writable by the user themselves.
     //
+    // email_confirm skips the confirmation mail: the PI vouched for this address
+    // by typing it, and there is no link for the researcher to click anyway.
+    //
+    // invited_at is what makes the app demand a new password on first login —
+    // the PI knows this one. supabaseService.updatePassword answers it with
+    // password_set_at.
+    //
     // NOTE: We do NOT pre-check for duplicate emails with listUsers() because
     // that API is paginated and a pre-check would silently miss users beyond
-    // the first page. Instead we let inviteUserByEmail fail and translate the
+    // the first page. Instead we let createUser fail and translate the
     // "already registered" error into a proper 409 response.
-    const { data, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
-      data: {
+    const { data, error: inviteError } = await adminClient.auth.admin.createUser({
+      email,
+      password: initialPassword,
+      email_confirm: true,
+      user_metadata: {
         display_name: displayName,
         invited_by: user.id,
         invited_at: new Date().toISOString(),

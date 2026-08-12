@@ -3,12 +3,13 @@
 //   action=list  → list all users with role in (researcher, pi)
 //   action=ban   → disable user by setting ban_duration to 100 years
 //   action=unban → re-enable user (ban_duration=none)
-//   action=resend_activation → email a password setup link to an existing staff user
+//   action=reset_initial_password → set a new initial password the PI hands over
+//     in person; the account is put back into "must choose a password" state
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
-import { resendResearcherActivation } from "./actions.ts";
+import { resetResearcherInitialPassword } from "./actions.ts";
 
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
@@ -157,27 +158,36 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (action === "resend_activation") {
-      const result = await resendResearcherActivation(body.user_id, user.id, {
-        getUserById: async (userId) => {
-          const { data, error } = await admin.auth.admin.getUserById(userId);
-          return { user: data.user, error };
+    if (action === "reset_initial_password") {
+      const result = await resetResearcherInitialPassword(
+        body.user_id,
+        user.id,
+        body.initial_password || "",
+        new Date().toISOString(),
+        {
+          getUserById: async (userId) => {
+            const { data, error } = await admin.auth.admin.getUserById(userId);
+            return { user: data.user, error };
+          },
+          applyInitialPassword: async (userId, password, userMetadata) => {
+            const { error } = await admin.auth.admin.updateUserById(userId, {
+              password,
+              user_metadata: userMetadata,
+            });
+            return { error };
+          },
+          writeAudit: async (detail) => {
+            await admin.from("audit_trail").insert({
+              actor_id: detail.actor_id,
+              actor_role: "pi",
+              action: "admin.reset_researcher_initial_password",
+              resource: "auth.users",
+              resource_id: detail.target_id,
+              detail: { target_email: detail.target_email },
+            });
+          },
         },
-        sendRecoveryEmail: async (email) => {
-          const { error } = await admin.auth.resetPasswordForEmail(email);
-          return { error };
-        },
-        writeAudit: async (detail) => {
-          await admin.from("audit_trail").insert({
-            actor_id: detail.actor_id,
-            actor_role: "pi",
-            action: "admin.resend_researcher_activation",
-            resource: "auth.users",
-            resource_id: detail.target_id,
-            detail: { target_email: detail.target_email },
-          });
-        },
-      });
+      );
       return new Response(JSON.stringify(result.body), {
         status: result.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

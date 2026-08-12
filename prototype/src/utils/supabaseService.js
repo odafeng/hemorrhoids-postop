@@ -188,14 +188,18 @@ export async function saveSurgicalRecord(studyId, record) {
 // =====================
 
 /**
- * PI invites a new researcher (or another PI) by email.
- * Calls the researcher-invite Edge Function which uses service_role to
- * create the auth.users row + send an invitation email with set-password link.
+ * PI adds a new researcher (or another PI) to the study team.
+ * Calls the researcher-invite Edge Function which uses service_role to create a
+ * confirmed auth.users row carrying an initial password the PI hands over
+ * directly — no email is sent. The researcher is forced to replace it on first
+ * login (see the invited_at / password_set_at pair in useAuth).
  * @param {string} email
  * @param {string} displayName
  * @param {'researcher'|'pi'} role
+ * @param {string|null} surgeonId
+ * @param {string} initialPassword — told to the researcher out of band
  */
-export async function inviteResearcher(email, displayName, role = 'researcher', surgeonId = null) {
+export async function inviteResearcher(email, displayName, role = 'researcher', surgeonId = null, initialPassword = '') {
   if (!supabase) throw new Error('Supabase not configured');
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('未登入');
@@ -207,10 +211,16 @@ export async function inviteResearcher(email, displayName, role = 'researcher', 
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${session.access_token}`,
     },
-    body: JSON.stringify({ email, display_name: displayName, role, surgeon_id: surgeonId }),
+    body: JSON.stringify({
+      email,
+      display_name: displayName,
+      role,
+      surgeon_id: surgeonId,
+      initial_password: initialPassword,
+    }),
   });
   const result = await resp.json();
-  if (!resp.ok) throw new Error(result.error || `邀請失敗 (${resp.status})`);
+  if (!resp.ok) throw new Error(result.error || `建立帳號失敗 (${resp.status})`);
   return result;
 }
 
@@ -237,10 +247,16 @@ export async function unbanResearcher(userId) {
 }
 
 /**
- * PI-only: send a password setup email to an existing researcher/PI account.
+ * PI-only: give an existing researcher/PI account a new initial password to be
+ * handed over in person. The account goes back to demanding a replacement on
+ * the next login, so the PI's copy of the password is short-lived.
  */
-export async function resendResearcherActivation(userId) {
-  return await callResearcherManage({ action: 'resend_activation', user_id: userId });
+export async function resetResearcherInitialPassword(userId, initialPassword) {
+  return await callResearcherManage({
+    action: 'reset_initial_password',
+    user_id: userId,
+    initial_password: initialPassword,
+  });
 }
 
 async function callResearcherManage(body) {

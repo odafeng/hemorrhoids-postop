@@ -1,17 +1,17 @@
-type InviteError = { status?: number; code?: string; message?: string };
+type ProvisionError = { status?: number; code?: string; message?: string };
 
-export function invitationErrorResponse(error: InviteError, email: string) {
+// Accounts are created with a PI-supplied password rather than an emailed
+// invite link, so nothing here sends mail — the SMTP and send-rate branches
+// this module used to carry can no longer fire.
+export function invitationErrorResponse(error: ProvisionError, email: string) {
   if (
     error.code === "email_exists" ||
     /already registered|already been registered|already exists/i.test(error.message || "")
   ) {
     return { status: 409, error: `${email} 已經註冊過` };
   }
-  if (error.code === "email_address_not_authorized") {
-    return { status: 503, error: "尚未設定 Custom SMTP，無法寄送到外部信箱" };
-  }
-  if (error.code === "over_email_send_rate_limit") {
-    return { status: 429, error: "寄信次數過多，請稍後再試" };
+  if (error.code === "weak_password") {
+    return { status: 400, error: "初始密碼不符合安全性要求，請換一組" };
   }
   return null;
 }

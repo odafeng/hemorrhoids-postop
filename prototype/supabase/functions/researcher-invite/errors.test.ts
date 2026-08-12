@@ -8,10 +8,13 @@ Deno.test("只有 email_exists 才顯示已註冊", () => {
   );
 });
 
-Deno.test("外部信箱被 default SMTP 拒絕時提示設定 Custom SMTP", () => {
+// The PI types the initial password, so they are the one who has to be told it
+// was rejected — an untranslated GoTrue code reads as "建立失敗" and they retry
+// the same password.
+Deno.test("初始密碼被強度檢查擋下時說清楚是密碼的問題", () => {
   assert.deepEqual(
-    invitationErrorResponse({ code: "email_address_not_authorized", message: "not authorized" }, "staff@example.com"),
-    { status: 503, error: "尚未設定 Custom SMTP，無法寄送到外部信箱" },
+    invitationErrorResponse({ code: "weak_password", message: "Password is too weak" }, "staff@example.com"),
+    { status: 400, error: "初始密碼不符合安全性要求，請換一組" },
   );
 });
 

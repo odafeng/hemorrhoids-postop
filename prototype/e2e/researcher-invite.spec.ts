@@ -1,4 +1,4 @@
-// E2E: PI invites a new researcher / PI via email
+// E2E: PI adds a new researcher / PI with a hand-delivered initial password
 // - UI gating checks (run always): demo researcher must NOT see PI-only panel
 // - PI flow (env-gated): E2E_PI_EMAIL / E2E_PI_PASSWORD required
 
@@ -54,7 +54,7 @@ test.describe('Researcher invite — PI flow (real Supabase)', () => {
   });
 
   test('empty fields → inline error', async ({ page }) => {
-    await page.getByRole('button', { name: /寄出邀請信/ }).click();
+    await page.getByRole('button', { name: /建立帳號/ }).click();
     await expect(page.getByText('請輸入 Email 與姓名')).toBeVisible();
   });
 
@@ -82,7 +82,8 @@ test.describe('Researcher invite — PI flow (real Supabase)', () => {
 
     await page.getByPlaceholder('researcher@example.com').fill('not-an-email');
     await page.getByPlaceholder(/研究助理/).fill('測試用');
-    await page.getByRole('button', { name: /寄出邀請信/ }).click();
+    await page.getByPlaceholder('至少 8 個字元').fill('temp-pass-1234');
+    await page.getByRole('button', { name: /建立帳號/ }).click();
 
     await expect(page.getByText('Email 格式不正確')).toBeVisible({ timeout: 30_000 });
   });
@@ -103,13 +104,16 @@ test.describe('Researcher invite — PI flow (real Supabase)', () => {
 
     await page.getByPlaceholder('researcher@example.com').fill(testEmail);
     await page.getByPlaceholder(/研究助理/).fill('測試人員');
-    await page.getByRole('button', { name: /寄出邀請信/ }).click();
+    await page.getByPlaceholder('至少 8 個字元').fill('temp-pass-1234');
+    await page.getByRole('button', { name: /建立帳號/ }).click();
 
-    await expect(page.getByText(`✓ 已提交邀請信寄送至 ${testEmail}`)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(new RegExp(`已建立 ${testEmail}`))).toBeVisible({ timeout: 30_000 });
 
     // Form should have cleared
     await expect(page.getByPlaceholder('researcher@example.com')).toHaveValue('');
     await expect(page.getByPlaceholder(/研究助理/)).toHaveValue('');
+    // The password must not linger on screen for the next person at this desk.
+    await expect(page.getByPlaceholder('至少 8 個字元')).toHaveValue('');
   });
 
   test('duplicate email → server 409 surfaced', async ({ page }) => {
@@ -123,17 +127,18 @@ test.describe('Researcher invite — PI flow (real Supabase)', () => {
 
     await page.getByPlaceholder('researcher@example.com').fill('dup@example.com');
     await page.getByPlaceholder(/研究助理/).fill('重複測試');
-    await page.getByRole('button', { name: /寄出邀請信/ }).click();
+    await page.getByPlaceholder('至少 8 個字元').fill('temp-pass-1234');
+    await page.getByRole('button', { name: /建立帳號/ }).click();
 
     await expect(page.getByText('dup@example.com 已經註冊過')).toBeVisible({ timeout: 30_000 });
   });
 
-  test('unactivated researcher → PI can resend password setup email', async ({ page }) => {
-    let resendRequested = false;
+  test('stuck researcher → PI can hand over a new initial password', async ({ page }) => {
+    let resetRequested = false;
     await page.route('**/functions/v1/researcher-manage', async (route) => {
       const body = route.request().postDataJSON();
-      if (body.action === 'resend_activation') {
-        resendRequested = body.user_id === 'mock-researcher-id';
+      if (body.action === 'reset_initial_password') {
+        resetRequested = body.user_id === 'mock-researcher-id' && body.initial_password === 'temp-pass-1234';
         return route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -149,17 +154,17 @@ test.describe('Researcher invite — PI flow (real Supabase)', () => {
             email: 'pending-researcher@example.com',
             display_name: '待啟用研究員',
             role: 'researcher',
-            last_sign_in_at: null,
+            last_sign_in_at: '2026-08-12T04:38:22.218Z',
           }],
         }),
       });
     });
-    page.on('dialog', (dialog) => dialog.accept());
+    page.on('dialog', (dialog) => dialog.accept('temp-pass-1234'));
     await page.reload();
 
-    await page.getByRole('button', { name: '重新寄送待啟用研究員的設定密碼信' }).click();
+    await page.getByRole('button', { name: '重設待啟用研究員的初始密碼' }).click();
 
-    await expect(page.getByText('已提交設定密碼信到 pending-researcher@example.com')).toBeVisible();
-    expect(resendRequested).toBe(true);
+    await expect(page.getByText(/已重設 pending-researcher@example.com 的初始密碼/)).toBeVisible();
+    expect(resetRequested).toBe(true);
   });
 });

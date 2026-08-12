@@ -13,7 +13,7 @@ vi.mock('../../utils/supabaseService', () => ({
   getAllReportsForResearcher: vi.fn(),
   listStudyInvites: vi.fn(),
   listResearchers: vi.fn(),
-  resendResearcherActivation: vi.fn(),
+  resetResearcherInitialPassword: vi.fn(),
   createStudyInvite: vi.fn(),
 }));
 import * as sb from '../../utils/supabaseService';
@@ -35,7 +35,7 @@ describe('ResearcherDashboard — cohort row navigation', () => {
     sb.getAllReportsForResearcher.mockResolvedValue([]);
     sb.listStudyInvites.mockResolvedValue([]);
     sb.listResearchers.mockResolvedValue([]);
-    sb.resendResearcherActivation.mockResolvedValue({ success: true });
+    sb.resetResearcherInitialPassword.mockResolvedValue({ success: true });
   });
 
   it('點 cohort 列導覽到該病人詳情', async () => {
@@ -74,31 +74,58 @@ describe('ResearcherDashboard — cohort row navigation', () => {
     expect(screen.getByTestId('loc')).not.toHaveTextContent('/lookup/HSF-001');
   });
 
-  it('PI 可替尚未啟用的研究人員重新寄送設定密碼信', async () => {
-    sb.listResearchers.mockResolvedValue([
-      {
-        id: 'researcher-1',
-        email: 'researcher@example.com',
-        display_name: '測試研究員',
-        role: 'researcher',
-        last_sign_in_at: null,
-      },
-    ]);
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const client = createTestQueryClient();
+  // 被邀請信卡住的人 last_sign_in_at 是有值的——他確實登入過一次，只是那次之後
+  // 再也進不來。之前這顆按鈕綁在「從未登入」上，等於對最需要它的人隱藏。
+  const signedInOnceResearcher = {
+    id: 'researcher-1',
+    email: 'researcher@example.com',
+    display_name: '測試研究員',
+    role: 'researcher',
+    last_sign_in_at: '2026-08-12T04:38:22.218Z',
+  };
 
-    render(
+  const renderPiDashboard = () => {
+    const client = createTestQueryClient();
+    return render(
       <MemoryRouter initialEntries={['/researcher']}>
         <QueryClientProvider client={client}>
           <ResearcherDashboard onNavigate={() => {}} isDemo={false} userInfo={{ id: 'pi-1', role: 'pi' }} onLogout={() => {}} />
         </QueryClientProvider>
       </MemoryRouter>
     );
+  };
 
-    fireEvent.click(await screen.findByRole('button', { name: '重新寄送測試研究員的設定密碼信' }));
+  it('PI 可替登入過但沒有可用密碼的研究人員重設初始密碼', async () => {
+    sb.listResearchers.mockResolvedValue([signedInOnceResearcher]);
+    vi.spyOn(window, 'prompt').mockReturnValue('temp-pass-1234');
+    renderPiDashboard();
 
-    await waitFor(() => expect(sb.resendResearcherActivation).toHaveBeenCalledWith('researcher-1'));
-    expect(await screen.findByText('已提交設定密碼信到 researcher@example.com')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: '重設測試研究員的初始密碼' }));
+
+    await waitFor(() => expect(sb.resetResearcherInitialPassword).toHaveBeenCalledWith('researcher-1', 'temp-pass-1234'));
+    expect(await screen.findByText(/已重設 researcher@example.com 的初始密碼/)).toBeInTheDocument();
+  });
+
+  it('取消輸入時不呼叫 service', async () => {
+    sb.listResearchers.mockResolvedValue([signedInOnceResearcher]);
+    vi.spyOn(window, 'prompt').mockReturnValue(null);
+    renderPiDashboard();
+
+    fireEvent.click(await screen.findByRole('button', { name: '重設測試研究員的初始密碼' }));
+
+    await waitFor(() => expect(sb.resetResearcherInitialPassword).not.toHaveBeenCalled());
+  });
+
+  // 送出去只會拿到 Edge Function 的 400，白跑一趟還多一次 service_role 呼叫。
+  it('太短的密碼在前端就擋下，不打 service', async () => {
+    sb.listResearchers.mockResolvedValue([signedInOnceResearcher]);
+    vi.spyOn(window, 'prompt').mockReturnValue('short');
+    renderPiDashboard();
+
+    fireEvent.click(await screen.findByRole('button', { name: '重設測試研究員的初始密碼' }));
+
+    expect(await screen.findByText('初始密碼至少需要 8 個字元')).toBeInTheDocument();
+    expect(sb.resetResearcherInitialPassword).not.toHaveBeenCalled();
   });
 
   // 有效期是研究層級的參數，不是逐案決策。把它留在收案動線上只是多一個能填錯的
