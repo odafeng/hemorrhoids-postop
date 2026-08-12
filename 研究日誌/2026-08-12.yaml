@@ -196,6 +196,8 @@ verification:
   - finding 6 的證據取自 auth.users 與 auth log，非由使用者回報推測：
     invited_at / confirmed_at / last_sign_in_at / recovery_sent_at 四個時間戳與
     /invite、/verify、/recover、/signup、/token 的請求序列一致
+  - 修復於 production 之當事帳號上生效：部署後查 auth.users，該員 user_metadata
+    已寫入 password_set_at，即他確實走完新的設定密碼畫面。不需另行重設，亦未寄出任何信件。
 
 follow_ups:
   - pii_patients 補登 HSF-002 / WCC-001 / WCC-002，並順手修正 HSF-001 的 consent 欄位
@@ -208,9 +210,10 @@ follow_ups:
     此檢核讀不到 Excel，只能守住加密資料表這一側，但足以在收案當天而非五天後發現漏登。
   - Reset Password template 加印純文字網址後，重測一次並回填 finding 7 的根因
   - 病人端「忘記密碼」在 template 修正前仍不可靠，需請研究人員以 admin-reset-password 代為處理
-  - 08-04 建立的研究人員帳號其 user_metadata 帶有 invited_at 而無 password_set_at，
-    下次登入會被要求重設密碼。若該員目前已有可用密碼且不希望被打斷，
-    可由 PI 於 SQL editor 補上 password_set_at
+  - 08-04 建立的研究人員為同一缺陷的潛伏受害者，須讓其設定密碼，不可補 password_set_at 略過。
+    證據：last_sign_in_at 即 08-05 那次邀請連結的 verify，audit_trail 無任何 admin.reset_password，
+    user_metadata 無 password_set_at——他從未設定過密碼，僅靠 refresh token 讓 session 未曾中斷。
+    該 session 一旦失效即為第二起鎖死。修復已上線，他下次載入 App 時會被要求設定。
   - e2e 未涵蓋受邀者設定密碼的整段流程（PI flow 測試預設 skip，需 E2E_PI_* 環境變數）。
     本次以單元測試與 auth log 驗證，但這段動線目前沒有端到端的守門
 
