@@ -337,6 +337,10 @@ follow_ups:
     與 check-adherence 的查詢，屬行為變更，非收案期間該做的事
   - pending_notifications 是唯一不需通知權限就會出現的提醒（Dashboard 上的卡片）。
     未開權限的病人仍看得到，但必須主動開 App
+  - primary outcome 三個構成指標中有兩個目前量不準，已另立文件：
+    docs/research/2026-08-12-primary-outcome-measurement-gaps.md。
+    含 app_activated 從未被寫入、adherence 分子分母不對稱、
+    以及本日提醒策略變更對前後段受試者不可直接合併的影響。四項待 PI 決定的定義問題列於文末
   - pii_patients 補登 HSF-002 / WCC-001 / WCC-002，並順手修正 HSF-001 的 consent 欄位
   - HSF-001 補填 D14 實際回診日期
   - check-adherence 亦以 study_status='active' 取得對象，TEST-001 在內，故會照排程對其
