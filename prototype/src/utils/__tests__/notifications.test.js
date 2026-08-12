@@ -179,6 +179,39 @@ describe('notifications', () => {
   // =====================
   // Scheduler
   // =====================
+  // =====================
+  // Report-day schedule
+  // =====================
+  describe('isReportDay', () => {
+    // Pinned against fn_report_days() in
+    // supabase/migrations/20260802160000_report_day_schedule.sql. This list is the
+    // whole reason the duplication is tolerable — if the SQL changes and this does
+    // not, this test is what fails.
+    const REPORT_DAYS = [0, 1, 2, 3, 4, 5, 6, 7, 9, 11, 13, 20, 27];
+
+    it('matches fn_report_days() across the whole 30-day window', async () => {
+      const { isReportDay } = await importModule();
+      const actual = Array.from({ length: 31 }, (_, d) => d).filter(isReportDay);
+      expect(actual).toEqual(REPORT_DAYS);
+      expect(actual).toHaveLength(13);
+    });
+
+    it('rejects pre-operative days', async () => {
+      const { isReportDay } = await importModule();
+      // getPODFromDate() clamps these to 0; the scheduler must not, or a patient
+      // enrolled the day before surgery gets reminded to report a surgery that
+      // has not happened.
+      expect(isReportDay(-1)).toBe(false);
+      expect(isReportDay(-7)).toBe(false);
+    });
+
+    it('rejects days past the 30-day follow-up window', async () => {
+      const { isReportDay } = await importModule();
+      expect(isReportDay(31)).toBe(false);
+      expect(isReportDay(34)).toBe(false); // would satisfy (d - 13) % 7 === 0
+    });
+  });
+
   describe('startReminderScheduler / stopReminderScheduler', () => {
     beforeEach(() => {
       globalThis.Notification = { permission: 'granted', requestPermission: vi.fn() };
@@ -192,7 +225,7 @@ describe('notifications', () => {
     it('does nothing if notifications are not enabled', async () => {
       const { startReminderScheduler, stopReminderScheduler } = await importModule();
       const checkFn = vi.fn().mockResolvedValue(false);
-      startReminderScheduler(checkFn);
+      startReminderScheduler(checkFn, () => 3); // POD 3 — a report day
       await vi.advanceTimersByTimeAsync(100);
       // checkFn should not be called because enabled is false
       expect(checkFn).not.toHaveBeenCalled();
@@ -204,7 +237,7 @@ describe('notifications', () => {
       const { startReminderScheduler, stopReminderScheduler, setNotificationsEnabled } = await importModule();
       setNotificationsEnabled(true);
       const checkFn = vi.fn().mockResolvedValue(false); // not reported
-      startReminderScheduler(checkFn);
+      startReminderScheduler(checkFn, () => 3); // POD 3 — a report day
       await vi.advanceTimersByTimeAsync(100);
       expect(checkFn).toHaveBeenCalled();
       stopReminderScheduler();
@@ -220,7 +253,7 @@ describe('notifications', () => {
       const { startReminderScheduler, stopReminderScheduler, setNotificationsEnabled } = await importModule();
       setNotificationsEnabled(true);
       const checkFn = vi.fn().mockResolvedValue(true); // already reported
-      startReminderScheduler(checkFn);
+      startReminderScheduler(checkFn, () => 3); // POD 3 — a report day
       await vi.advanceTimersByTimeAsync(100);
       expect(showNotification).not.toHaveBeenCalled();
       stopReminderScheduler();
@@ -231,7 +264,7 @@ describe('notifications', () => {
       const { startReminderScheduler, stopReminderScheduler, setNotificationsEnabled } = await importModule();
       setNotificationsEnabled(true);
       const checkFn = vi.fn().mockResolvedValue(false);
-      startReminderScheduler(checkFn);
+      startReminderScheduler(checkFn, () => 3); // POD 3 — a report day
       await vi.advanceTimersByTimeAsync(100);
       expect(checkFn).not.toHaveBeenCalled();
       stopReminderScheduler();
@@ -242,7 +275,7 @@ describe('notifications', () => {
       const { startReminderScheduler, stopReminderScheduler, setNotificationsEnabled } = await importModule();
       setNotificationsEnabled(true);
       const checkFn = vi.fn().mockResolvedValue(false);
-      startReminderScheduler(checkFn);
+      startReminderScheduler(checkFn, () => 3); // POD 3 — a report day
       await vi.advanceTimersByTimeAsync(100);
       // First call done — now advance 15 min interval
       checkFn.mockClear();
@@ -254,9 +287,46 @@ describe('notifications', () => {
 
     it('stopReminderScheduler clears interval', async () => {
       const { startReminderScheduler, stopReminderScheduler } = await importModule();
-      startReminderScheduler(vi.fn());
+      startReminderScheduler(vi.fn(), () => 3);
       stopReminderScheduler();
       // no error, just verifying it doesn't throw
+    });
+
+    // check-adherence stopped reminding on non-report days on 2026-08-02; the in-app
+    // scheduler kept nagging on every one of them until this guard.
+    it('does not remind on a day the protocol never asks for a report', async () => {
+      vi.setSystemTime(new Date('2026-03-18T21:00:00'));
+      const { startReminderScheduler, stopReminderScheduler, setNotificationsEnabled } = await importModule();
+      setNotificationsEnabled(true);
+      const checkFn = vi.fn().mockResolvedValue(false);
+      startReminderScheduler(checkFn, () => 8); // POD 8 — second week, not a report day
+      await vi.advanceTimersByTimeAsync(100);
+      expect(checkFn).not.toHaveBeenCalled();
+      stopReminderScheduler();
+    });
+
+    it('does not remind before surgery', async () => {
+      vi.setSystemTime(new Date('2026-03-18T21:00:00'));
+      const { startReminderScheduler, stopReminderScheduler, setNotificationsEnabled } = await importModule();
+      setNotificationsEnabled(true);
+      const checkFn = vi.fn().mockResolvedValue(false);
+      startReminderScheduler(checkFn, () => -1);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(checkFn).not.toHaveBeenCalled();
+      stopReminderScheduler();
+    });
+
+    // Mirrors `if (!p.surgery_date) continue;` in check-adherence/schedule.ts: with no
+    // surgery date there is no POD, and a reminder would be a guess.
+    it('does not remind when the surgery date is unknown', async () => {
+      vi.setSystemTime(new Date('2026-03-18T21:00:00'));
+      const { startReminderScheduler, stopReminderScheduler, setNotificationsEnabled } = await importModule();
+      setNotificationsEnabled(true);
+      const checkFn = vi.fn().mockResolvedValue(false);
+      startReminderScheduler(checkFn, () => null);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(checkFn).not.toHaveBeenCalled();
+      stopReminderScheduler();
     });
 
     it('handles checkReportedFn throwing error gracefully', async () => {
@@ -264,7 +334,7 @@ describe('notifications', () => {
       const { startReminderScheduler, stopReminderScheduler, setNotificationsEnabled } = await importModule();
       setNotificationsEnabled(true);
       const checkFn = vi.fn().mockRejectedValue(new Error('network error'));
-      startReminderScheduler(checkFn);
+      startReminderScheduler(checkFn, () => 3); // POD 3 — a report day
       await vi.advanceTimersByTimeAsync(100);
       // Should not throw
       expect(checkFn).toHaveBeenCalled();

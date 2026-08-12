@@ -20,7 +20,7 @@ import SurgicalRecord from './pages/SurgicalRecord';
 import * as I from './components/Icons';
 import { installGlobalErrorHandlers, initSentry, logError } from './utils/errorLogger';
 import { useAuth } from './utils/useAuth';
-import { getTodayReport as getLocalTodayReport } from './utils/storage';
+import { getTodayReport as getLocalTodayReport, getSurgeryDate as getLocalSurgeryDate } from './utils/storage';
 import { startReminderScheduler, stopReminderScheduler } from './utils/notifications';
 import { signOut } from './utils/supabaseService';
 import * as sb from './utils/supabaseService';
@@ -109,7 +109,14 @@ export default function App() {
       return true;
     };
 
-    startReminderScheduler(checkReported);
+    // Signed, not getPODFromDate() — that clamps pre-op days to 0 and would have the
+    // scheduler chase a POD 0 report before the surgery has happened.
+    const dayFromSurgery = () => {
+      const date = isDemo ? getLocalSurgeryDate() : userInfo?.surgeryDate;
+      return date ? sb.getDaysFromSurgery(date) : null;
+    };
+
+    startReminderScheduler(checkReported, dayFromSurgery);
 
     const handleSWMessage = (event) => {
       if (event.data?.type === 'NAVIGATE' && event.data?.url) navigate(event.data.url);

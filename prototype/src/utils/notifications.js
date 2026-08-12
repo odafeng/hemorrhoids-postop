@@ -138,6 +138,31 @@ export async function showReminderNotification() {
 }
 
 // =====================
+// Report-day schedule
+// =====================
+
+/**
+ * Is `day` one of the days the protocol asks for a symptom report?
+ * 第一週每日、第二週每兩日一次、第三週起每週一次 → POD 0-7, 9/11/13, 20/27.
+ *
+ * This mirrors fn_report_days() (20260802160000_report_day_schedule.sql), which the
+ * reminder cron reads over RPC precisely so the rule lives in one place. It is copied
+ * here rather than fetched because that function is GRANTed to service_role only, and
+ * opening it to patient roles means a production schema change — not something to do
+ * mid-enrolment. The duplication is pinned by a test that lists all 13 days.
+ *
+ * @param {number|null} day — SIGNED offset from surgery. Pass getDaysFromSurgery(),
+ *   not getPODFromDate(): the latter clamps pre-operative days to 0, which would make
+ *   a patient enrolled before surgery look like they owe a POD 0 report.
+ */
+export function isReportDay(day) {
+  if (typeof day !== 'number' || day < 0 || day > 30) return false;
+  if (day <= 7) return true;
+  if (day <= 14) return (day - 7) % 2 === 0;
+  return (day - 13) % 7 === 0;
+}
+
+// =====================
 // Scheduler
 // =====================
 
@@ -149,14 +174,20 @@ let lastNotificationDate = null; // Track to avoid duplicate notifications per d
  * Checks every 15 minutes if it's past the reminder time and the user hasn't reported.
  *
  * @param {() => Promise<boolean>} checkReportedFn — async function returning true if today's report exists
+ * @param {() => number|null} getDayFromSurgeryFn — signed days since surgery, or null
+ *   if unknown. Called on every tick rather than captured once, so crossing midnight
+ *   moves the scheduler onto the new day's schedule without a restart.
  */
-export function startReminderScheduler(checkReportedFn) {
+export function startReminderScheduler(checkReportedFn, getDayFromSurgeryFn) {
   stopReminderScheduler();
 
   // Check immediately, then every 15 minutes
   const check = async () => {
     if (!isNotificationsEnabled()) return;
     if (getNotificationStatus() !== 'granted') return;
+    // Silence on days the protocol never asks about — matches what check-adherence
+    // does server-side. Unknown POD stays silent rather than guessing.
+    if (!isReportDay(getDayFromSurgeryFn?.())) return;
 
     const now = new Date();
     const today = now.toLocaleDateString('en-CA');
