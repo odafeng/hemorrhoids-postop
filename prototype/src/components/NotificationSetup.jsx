@@ -186,7 +186,11 @@ export default function NotificationSetup({ studyId, isDemo }) {
     }
   };
 
-  const timeValue = `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`;
+  // Server push fires from .github/workflows/cron-notify.yml, which runs at fixed
+  // Taiwan-time hours — it does not read the patient's reminder time. Keep this string
+  // in sync with that cron if the schedule changes; the copy below is the only place
+  // patients learn when a push actually arrives.
+  const PUSH_HOURS_LABEL = '中午 12:00 與晚上 20:00';
 
   if (!supported) return null;
 
@@ -196,14 +200,14 @@ export default function NotificationSetup({ studyId, isDemo }) {
         <div className="card-header">
           <div className="card-icon" style={{ background: 'var(--danger-dim)' }}>🔕</div>
           <div>
-            <div className="card-title">每日提醒</div>
+            <div className="card-title">回報提醒</div>
             <span className="status-badge" style={{ background: 'var(--danger-dim)', color: 'var(--danger)' }}>
               通知已被封鎖
             </span>
           </div>
         </div>
         <p style={{ fontSize: 'var(--font-xs)', color: 'var(--text-muted)', margin: 0 }}>
-          請至瀏覽器設定中重新開啟通知權限，才能收到每日提醒。
+          請至瀏覽器設定中重新開啟通知權限，才能收到回報提醒。
         </p>
       </div>
     );
@@ -216,7 +220,7 @@ export default function NotificationSetup({ studyId, isDemo }) {
           {enabled ? '🔔' : '🔕'}
         </div>
         <div style={{ flex: 1 }}>
-          <div className="card-title">每日提醒</div>
+          <div className="card-title">回報提醒</div>
           {enabled && (
             <span className="status-badge completed" style={{ fontSize: '0.65rem' }}>
               {pushStatus === 'subscribed' ? '✓ 推播已開啟' : '✓ 已開啟'}
@@ -235,7 +239,8 @@ export default function NotificationSetup({ studyId, isDemo }) {
 
       {!enabled && (
         <p style={{ fontSize: 'var(--font-xs)', color: 'var(--text-muted)', margin: '8px 0 0' }}>
-          開啟後，即使未開啟 App，系統也會在設定時間推播通知提醒您填寫症狀回報。
+          開啟後，需回報的日子若還沒填寫，系統會在{PUSH_HOURS_LABEL}推播提醒您，
+          沒有開啟 App 也收得到。
         </p>
       )}
 
@@ -287,6 +292,9 @@ export default function NotificationSetup({ studyId, isDemo }) {
               </span>
             </div>
           </div>
+          <p style={{ fontSize: 'var(--font-xs)', color: 'var(--text-muted)', margin: '2px 0 8px', lineHeight: 1.4 }}>
+            此時間只在 App 開著時生效。伺服器推播固定於{PUSH_HOURS_LABEL}發送。
+          </p>
           <button
             className="btn btn-secondary notif-test-btn"
             onClick={handleTestNotification}
@@ -336,7 +344,7 @@ export default function NotificationSetup({ studyId, isDemo }) {
               marginTop: '6px',
               animation: 'fadeIn 0.3s ease',
             }}>
-              ✓ 通知已開啟！每天 {timeValue} 若未回報將收到提醒。
+              ✓ 通知已開啟！需回報的日子若未填寫，將於{PUSH_HOURS_LABEL}收到推播提醒。
             </div>
           )}
           {pushStatus === 'error' && (

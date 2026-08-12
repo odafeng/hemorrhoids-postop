@@ -56,13 +56,30 @@ describe('NotificationSetup', () => {
 
   it('renders toggle button in default state', () => {
     render(<NotificationSetup {...defaultProps} />);
-    expect(screen.getByText('每日提醒')).toBeInTheDocument();
+    expect(screen.getByText('回報提醒')).toBeInTheDocument();
     expect(screen.getByLabelText('開啟通知')).toBeInTheDocument();
   });
 
   it('shows description when notifications are off', () => {
     render(<NotificationSetup {...defaultProps} />);
-    expect(screen.getByText(/開啟後，即使未開啟 App/)).toBeInTheDocument();
+    expect(screen.getByText(/開啟後，需回報的日子/)).toBeInTheDocument();
+  });
+
+  // The reminder time selects only drive the in-app scheduler; server push runs from
+  // cron-notify.yml at fixed hours and never reads notification_preferences. The copy
+  // used to promise a push at whatever time the patient picked, which was never true.
+  it('states the fixed server push hours, not the patient-selected time', async () => {
+    const notif = await import('../../utils/notifications');
+    notif.isNotificationsEnabled.mockReturnValue(true);
+    notif.getNotificationStatus.mockReturnValue('granted');
+    notif.getReminderTime.mockReturnValue({ hour: 8, minute: 30 });
+
+    render(<NotificationSetup {...defaultProps} />);
+
+    expect(screen.getByText(/伺服器推播固定於中午 12:00 與晚上 20:00/)).toBeInTheDocument();
+    expect(screen.getByText(/此時間只在 App 開著時生效/)).toBeInTheDocument();
+    // 08:30 is the patient's pick — it must not be presented as when a push arrives.
+    expect(screen.queryByText(/每天 08:30/)).not.toBeInTheDocument();
   });
 
   it('toggles notifications on — requests permission and enables', async () => {
