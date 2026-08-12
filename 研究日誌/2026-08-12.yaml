@@ -128,6 +128,35 @@ hypotheses_ruled_out:
       至下一次部署才失效
     note: 讀到舊 bundle 應先查部署狀態，不要直接判定失敗而重推一次
 
+  # 以下三則出自傍晚的提醒排程工作
+  - hypothesis: 提醒卡片與實際行為的落差只有「設定時間」這一項
+    disproved_by: >
+      查 fn_report_days() 後，卡片標題「每日提醒」同樣不成立：協定是
+      POD 0-7 每日、9/11/13、20/27，30 天內共 13 天，第八天起就不是每日
+    note: 原本只打算改一句話，實際有三處不準（標題、關閉時說明、剛開啟的成功訊息）
+
+  - hypothesis: 前端排程器與 check-adherence 的提醒條件一致，差的只是文案
+    disproved_by: >
+      grep 全前端查無 reportDay / fn_report_days 任何字樣。
+      startReminderScheduler 只判斷「今天沒有回報且過了設定時間」，
+      POD 8、10、12、15、16 這些非回報日照樣提醒
+    note: >
+      2026-08-02 把排程收斂進 fn_report_days() 時只改了 check-adherence。
+      當時的註解寫明要停止在病人未被要求回報的日子打擾他們，
+      但前端排程器不在那次的檢查範圍內，於是同一個行為修了一半
+
+  - hypothesis: 純邏輯改動也能沿用「grep bundle 字串」來驗證上線
+    disproved_by: >
+      grep -c "isReportDay\|%7" 回報 1，實為假陽性：isReportDay 命中 0 次
+      （minify 後函式名根本不存在），命中的是別處的 %7=。
+      且當下 bundle hash 仍是前一版的 index-DpBMpl-R.js，根本還沒部署完
+    note: >
+      字串比對法的前提是這次改動帶有新增的使用者可見字串。純邏輯改動沒有，
+      硬套就會造出假綠燈——比沒驗證更糟，因為它看起來已經確認過。
+      改用兩項有對照的證據：本地 build 產物中該函式 minify 後的實際樣子
+      （-13)%7==0）拿去線上 grep，並以改動前留下的舊 bundle 當對照組；
+      再以 Vercel deployment 的 githubCommitSha 確認部署的就是該 commit
+
 actions:
   performed:
     - 對照表補入 HSF-002 第 4 列：Study ID、手術日期 2026-08-08、主刀 HSF、收案日期 2026-08-07、狀態追蹤中
@@ -178,6 +207,47 @@ changes:
     - v_adherence_summary 未變更。收案期間不動 production schema，
       且該 view 是 e2e 與離線分析共用的資料來源
     - CSV 匯出未受影響：TEST-001 無 symptom_reports，本來就不會出現在匯出結果中
+
+changes_notifications:   # 傍晚：提醒排程與提醒卡片文案
+  code:
+    - NotificationSetup 卡片標題由「每日提醒」改為「回報提醒」（含權限被封鎖的分支）
+    - 推播時段抽為 PUSH_HOURS_LABEL 常數，註解指向 .github/workflows/cron-notify.yml。
+      硬編在文案裡的 12:00 / 20:00 沒有程式上的來源，改 cron 時很容易漏掉這一處
+    - 時間選擇器保留，但下方加註「只在 App 開著時生效」。
+      要讓伺服器推播吃病人設定的時間，得改 cron 觸發頻率與 check-adherence，非文案改動
+    - notifications.js 新增 isReportDay(day)，對照 fn_report_days() 的三段規則
+    - startReminderScheduler 新增第二參數 getDayFromSurgeryFn，每個 tick 呼叫一次而非
+      啟動時取一次，跨午夜才會落到新的一天
+    - App.jsx 以 getDaysFromSurgery() 而非 getPODFromDate() 供給該參數
+  tests:
+    - notifications.test.js 新增 6 項：13 天清單、術前為否、超出 30 天為否
+      （含 POD 34，它滿足 (d-13)%7===0，用來咬住上界檢查）、
+      非回報日不提醒、術前不提醒、無手術日期不提醒
+    - 既有 6 處 startReminderScheduler 呼叫補上 POD 參數
+    - NotificationSetup.test.jsx 新增 1 項：把病人設定時間 mock 成 08:30，
+      斷言畫面不得出現「每天 08:30」
+    - RED 階段實際觀察到 6 項失敗
+  decision: >
+    fn_report_days() 只 GRANT EXECUTE TO service_role，病人端 client 無法以 RPC 讀取，
+    開放給 patient role 屬於 production schema 變更，收案期間不做。
+    因此規則複製一份到前端，以「列出全部 13 天」的測試釘住；SQL 若異動，該測試就是紅燈的那一個。
+    PI 於本次明確選擇此方案，另外三個選項（改看 pending_notification、停用本機排程器、
+    先不動只記錄）均已列出比較。
+
+deployment_notifications:
+  status: 已部署
+  pushed: 8d26835（文案）、51eeb70（排程）
+  targets:
+    - target: Vercel production
+      note: 兩次皆由 git integration 觸發，未改動 Edge Function，不需等 CI
+      verified: >
+        文案：live bundle 含 '伺服器推播固定於'，且 '若未回報將收到提醒' 已消失。
+        排程：bundle hash 由 index-DpBMpl-R.js 變為 index-B-sjGwB-.js，
+        新 bundle 含 -13)%7==0 一次、改動前的舊 bundle 零次（對照組）；
+        Vercel deployment dpl_FeDgdRNe 的 githubCommitSha 為 51eeb708、state READY
+  patient_impact: >
+    18:00 前後，開著 App 的患者會看到「系統已更新」橫幅。
+    行為變更本身對當日六名對象均為正向或無影響，見 verification。
 
 deployment:
   status: 已部署
@@ -241,7 +311,32 @@ verification:
   - 修復於 production 之當事帳號上生效：部署後查 auth.users，該員 user_metadata
     已寫入 password_set_at，即他確實走完新的設定密碼畫面。不需另行重設，亦未寄出任何信件。
 
+  # 傍晚一輪（提醒排程）
+  - Vitest 33 files / 423 tests passed（原 417 + 新增 6）；eslint 無輸出；build 成功
+  - e2e demo-flow.spec.ts 6 passed，確認 App.jsx 的接線未破壞示範模式登入動線
+  - 對 production 執行 SELECT * FROM fn_report_days()，實際回傳
+    [0,1,2,3,4,5,6,7,9,11,13,20,27]、n=13，與前端釘死的清單逐項相同。
+    這一步同時證明 production 的函式定義與 disk 上的 migration 沒有分歧——
+    此專案發生過 prod 與 disk 不一致（alerts 的 acknowledged_by）
+  - 以當日 production 資料回放六名對象的預期行為：
+    FIH-001 POD -1（術前）不提醒、HSF-002 POD 4 未回報則提醒、
+    WCC-001 POD 7 未回報則提醒、WCC-002 POD 7 已回報不提醒、
+    HSF-001 POD 19 非回報日不提醒、TEST-001 POD 25 非回報日不提醒
+  - FIH-001 為改動前確實會誤觸發的案例，非假想：舊排程器不看 POD，
+    該案今晚 20:00 若開著 App 且已開通知，會被要求回報一場隔天才進行的手術
+
 follow_ups:
+  - 本機提醒的通知內文仍為「您今日尚未填寫症狀回報」，未區分回報日；
+    現在只在回報日送出，文字尚屬正確，但若日後放寬觸發條件需一併檢視
+  - isReportDay 與 fn_report_days() 是同一規則的兩份實作。
+    協定若變更，兩處都要改，且前端那份的測試會先紅——這是刻意留的絆線
+  - 伺服器推播仍不讀 notification_preferences，只看 push_subscriptions 是否存在。
+    關閉開關時會 unsubscribe，效果一致；但換裝置或清 cache 導致 unsubscribe 失敗時，
+    伺服器端沒有第二道 enabled 檢查可擋
+  - 要讓伺服器推播真正吃病人設定的時間，需改 cron 觸發頻率（目前一天兩次）
+    與 check-adherence 的查詢，屬行為變更，非收案期間該做的事
+  - pending_notifications 是唯一不需通知權限就會出現的提醒（Dashboard 上的卡片）。
+    未開權限的病人仍看得到，但必須主動開 App
   - pii_patients 補登 HSF-002 / WCC-001 / WCC-002，並順手修正 HSF-001 的 consent 欄位
   - HSF-001 補填 D14 實際回診日期
   - check-adherence 亦以 study_status='active' 取得對象，TEST-001 在內，故會照排程對其
@@ -271,3 +366,13 @@ lesson_auth: >
   是真的，只是只涵蓋了一種收件端。
   另外，把「需要設定密碼」這個狀態放在帳號上而不是 URL 上，之後的重設功能幾乎不用
   多寫程式——清掉 password_set_at 就夠了。狀態該放在活得比一次頁面載入更久的地方。
+
+lesson_notifications: >
+  08-02 把提醒排程收進 fn_report_days()，那次改的是 check-adherence，理由寫得很清楚：
+  同一條規則散在兩個地方，當天已經產生兩個 bug。十天後才發現前端排程器也在做同一個判斷，
+  而它從來沒被算進「兩個地方」裡。收斂規則時，要先數清楚到底有幾個地方在做這個判斷，
+  不要只數自己正在改的那一側。
+  這次的驗證也踩了一次：字串比對法是為「有新增文案」的改動設計的，
+  純邏輯改動硬套會得到假綠燈。方法有適用範圍，換題目時要重新問一次它還成不成立。
+  最有用的一步反而是拿當天的 production 資料把改動回放一遍。單元測試只驗證得到我想得到的情境，
+  FIH-001 POD -1 這種案例是資料自己冒出來的——而它正好就是最該擋下的那一種。
