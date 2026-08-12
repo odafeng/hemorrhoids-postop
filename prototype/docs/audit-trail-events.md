@@ -29,10 +29,20 @@ Each `audit_trail` row contains:
 - `ip_address` — client IP (where available)
 - `created_at` — timestamp
 
+## PII audit (pii_access_log)
+
+| event         | status | notes                                                    |
+|---------------|--------|----------------------------------------------------------|
+| `pii.change`  | live since 2026-08-13 | `trg_audit_pii_change` on `pii_patients` logs INSERT/UPDATE/DELETE. Pass an explanation with `SET LOCAL app.access_reason = '...'` before the write. |
+| `pii.access`  | NOT audited | PI decrypts patient PII. **A trigger cannot do this** — Postgres has no SELECT trigger, and the event is a `SELECT ... pgp_sym_decrypt(...)`. Auditing reads requires routing them through a SECURITY DEFINER function and revoking direct SELECT on `pii_patients`; deferred on 2026-08-13 (no permission changes during enrolment). Note that even then, `service_role` and superuser bypass it. |
+
+An earlier version of this file said `pii.access` "needs trigger on pii_access_log".
+That was wrong twice over: the trigger would belong on `pii_patients`, not on the log
+table, and no trigger can capture a read at all.
+
 ## Events NOT yet audited (future)
 
 | event              | notes                                          |
 |--------------------|------------------------------------------------|
-| `pii.access`       | PI decrypts patient PII — needs trigger on pii_access_log |
 | `pii.export`       | Future CSV export tool                         |
 | `patient.withdraw`  | Patient withdrawn from study                   |

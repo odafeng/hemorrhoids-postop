@@ -82,6 +82,19 @@ hypotheses_ruled_out:
       但長度相同的兩筆互換（如兩筆皆為 8 碼病歷號、3 字姓名）驗不出來，
       要排除錯位仍須解密——這個界線在回報時必須講明，否則會把結構完整誤讀成內容正確
 
+  - hypothesis: 建一個稽核 trigger 就能補上 pii_access_log 的缺口
+    disproved_by: >
+      PostgreSQL 沒有 SELECT trigger。要稽核的事件是「PI 解密 PII」，
+      那是 SELECT + pgp_sym_decrypt()，任何 trigger 都攔不到。
+      本日稍早的多次解密，即使 trigger 早已存在也一樣不會留下紀錄。
+    note: >
+      prototype/docs/audit-trail-events.md 原記載「needs trigger on pii_access_log」，
+      錯了兩層：trigger 該裝在 pii_patients 而非 log 表上（裝在 log 表是寫入紀錄時才觸發，
+      方向相反）；而且就算裝對表，讀取仍抓不到。已更正該檔。
+      這一則的價值在於：待辦清單上一句看似明確的「建 trigger」，
+      其實描述的是一個做不到的東西——照著做只會得到一個涵蓋不到目標事件的稽核表，
+      而且表面上看起來像是已經處理完了
+
   - hypothesis: 資料庫與對照表的電話格式一致
     disproved_by: >
       phone_enc 為 76 bytes → 明文 10 碼，資料庫存的是純數字；
@@ -124,7 +137,21 @@ follow_ups:
       但本機 session transcript 仍應視為敏感。若決定輪替，五筆可於單一 transaction 內重新加密
   - id: 3
     item: pii_access_log 稽核觸發器尚未建立
-    status: 未處理（延續 2026-08-12）
+    status: 部分處理
+    resolution: >
+      異動稽核已上線：trg_audit_pii_change（AFTER INSERT/UPDATE/DELETE ON pii_patients）
+      寫入 pii_access_log，沿用專案既有的 fn_audit_* / trg_audit_* 命名。
+      呼叫端可用 SET LOCAL app.access_reason 帶入事由。
+      以 rollback transaction 實測觸發成功，稽核表未留測試殘留。
+    still_open: >
+      讀取稽核仍未涵蓋，且 trigger 做不到（見 hypotheses_ruled_out）。
+      要做必須改走 SECURITY DEFINER 函式並 REVOKE 直接 SELECT，
+      收案期間不動權限，PI 決定暫緩。即使做了，service_role 與 superuser 仍繞得過
+    ddl_note: >
+      以單一 DDL 直接對 production 執行，未經 db push（本機 migration 歷史與 prod 不同步，
+      db push 會重放全部歷史）。另補 20260813020000_pii_change_audit_trigger.sql 存查。
+      風險評估：grep prototype/src 與 supabase/functions 對 pii_patients 零命中，
+      無 app 程式路徑會觸發，且 DROP TRIGGER 可逆
   - id: 4
     item: WCC-002 聯絡電話未取得
     status: 未處理
