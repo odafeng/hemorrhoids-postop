@@ -157,6 +157,40 @@ hypotheses_ruled_out:
       （-13)%7==0）拿去線上 grep，並以改動前留下的舊 bundle 當對照組；
       再以 Vercel deployment 的 githubCommitSha 確認部署的就是該 commit
 
+  # 以下四則出自深夜的 pii_patients 補登
+  - hypothesis: pii_patients 的加密金鑰應該留在 Claude 對話紀錄裡（當初是請 Claude 產生 SQL 的）
+    disproved_by: >
+      掃過全部 87 個 session 的 jsonl，pgp_sym_encrypt 的金鑰參數位置六次命中全是
+      '<你的加密金鑰>' 或 <passphrase> 佔位符。時間軸也對得上：模板於 08:57 UTC 給出，
+      pii_patients.enrolled_at 為 09:20:49 UTC，中間 23 分鐘的替換動作發生在
+      Supabase SQL Editor 的輸入框裡
+    note: >
+      這是安全設計正常運作的結果，不是疏失——「不讓金鑰經過 AI 對話」執行得很徹底。
+      但可復原性必須另外設計，它不會是安全設計的副產品
+
+  - hypothesis: 20 天前的 postgres log 早就過期了，不用查
+    disproved_by: 指定 2026-07-23 的時間窗查詢，該日仍有 189 筆完整保留
+    note: >
+      真正的原因是 log_statement 不記 DML，只記到 SET statement_timeout 這類。
+      「查不到」的兩種原因要分清楚：資料過期還可以靠延長保留期補救，
+      從未被記錄則無論如何都補不回來
+
+  - hypothesis: README 記載的 vault.read_secret('pii_key') 可以直接使用
+    disproved_by: >
+      執行時報 42883 function vault.read_secret(unknown) does not exist。
+      Vault 只公開 create_secret 與 update_secret 兩個函式，讀取須透過
+      vault.decrypted_secrets view
+    note: >
+      該段文件從未被實際執行過，今天是第一次被拿來用。
+      沒跑過的程式碼片段，可信度等同註解——只是作者當時的意圖，不是系統行為。
+      同段還漏了 birth_date_enc（NOT NULL），照抄必定失敗
+
+  - hypothesis: 金鑰遺失後，資料只能重建
+    disproved_by: PI 於當晚提出第四個候選字串，解密成功
+    note: >
+      前三個候選（純數字）皆失敗。能救回是運氣，不是流程。
+      PI 選擇維持以記憶保管、不遷入 Vault，此決定已記錄於下方 zone_a_not_wired
+
 actions:
   performed:
     - 對照表補入 HSF-002 第 4 列：Study ID、手術日期 2026-08-08、主刀 HSF、收案日期 2026-08-07、狀態追蹤中
@@ -207,6 +241,39 @@ changes:
     - v_adherence_summary 未變更。收案期間不動 production schema，
       且該 view 是 e2e 與離線分析共用的資料來源
     - CSV 匯出未受影響：TEST-001 無 symptom_reports，本來就不會出現在匯出結果中
+
+zone_a_not_wired:   # 深夜：補登 FIH-001 個資時發現的整體狀況
+  finding: >
+    ZONE A（個資與稽核層）的 schema 建置完整，但運作從未接上。
+    身分對照實務上完全由 收案文件/收案對照表.xlsx 承擔，該表五位齊全、可正常讀取，
+    且其本身即為 IRB 規定之文件，故流程未違規；但計畫書描述的加密主檔與存取稽核為空。
+  evidence:
+    - pii_patients 僅 HSF-001 一筆（id=1，enrolled_at 2026-07-23 09:20:49 UTC）
+    - pii_access_log 0 筆，從未寫入
+    - vault.secrets 無 pii_key
+    - patients.app_activated 六筆全為 false，codebase 無任何寫入處
+    - audit_trail 最早的 pii/patient 相關紀錄為 11:09 UTC，晚於該次寫入近兩小時
+      （audit trigger 當時尚未建立），故該次 INSERT 在應用層亦無痕跡
+  pattern: >
+    三者形狀相同：有欄位沒人寫、有表沒人寫、有文件沒有函式。
+    共同點是都要等到第一次真正需要它的那天才會發現，而那天通常是分析階段。
+  key_incident:
+    what: HSF-001 的加密金鑰僅存於 PI 記憶，2026-08-12 一度無法回想
+    why_unrecoverable: >
+      五道機制各自因不同理由沒有記下它，其中至少三道是刻意為了安全：
+      (1) Claude 對話只收到佔位符（設計如此）
+      (2) SQL Editor 該 tab 未存成 snippet
+      (3) postgres log_statement 不記 DML
+      (4) pg_stat_statements 將字面值正規化為 $n（設計如此）
+      (5) audit trigger 當時尚未建立
+    resolution: PI 於當晚回想出正確字串，解密驗證通過，資料未損失
+    decision: >
+      PI 決定維持以記憶保管金鑰，不遷入 Vault。已告知代價：
+      該字串曾出現於本機 session transcript 與 claude-mem 記錄（不進 public repo），
+      且與 PI 其他系統共用。已建議更換該系統之密碼。
+  implication: >
+    對結案報告與論文 limitation 有影響：計畫書所述之加密個資主檔與存取稽核未實際運作。
+    需決定是補接上，或於報告中說明以 Excel 對照表替代。此為研究決策，非工程決策。
 
 changes_notifications:   # 傍晚：提醒排程與提醒卡片文案
   code:
@@ -352,6 +419,16 @@ follow_ups:
     進入追蹤期前應協助開啟並確認顯示「✓ 推播已開啟」
   - 本機提醒（startReminderScheduler）是否曾實際發出，目前沒有任何一端有紀錄。
     它不需要推播訂閱，但需要 App 開啟且已授予通知權限
+  - 收案對照表補入第 10 列 FIH-001（收案 2026-08-12、手術 2026-08-13、主刀 FIH、追蹤中）。
+    該檔已由 .gitignore:38 排除，未進版控
+  - pii_patients 尚缺 WCC-001 / WCC-002 / HSF-002 / FIH-001 四位。
+    補登 SQL 已產生於 session scratchpad（非 repo），姓名與病歷號自對照表填入，
+    金鑰與出生日期留佔位符。出生日期對照表無此欄位，須自病歷系統取得——
+    這是四位遲遲未補的實際原因，不是遺忘
+  - README 步驟 4 的 pii_patients 範例已修正：原本呼叫不存在的 vault.read_secret()，
+    且漏掉 NOT NULL 的 birth_date_enc。同段「每天 12:00/20:00 推播」亦改為「回報日」
+  - 7/23 postgres log 另見 64 次針對資料庫的密碼嘗試（user 為 app/guest/administrator/user，
+    皆不存在於本專案，全數失敗），屬對公開 Supabase 專案的自動掃描。尚未檢視近期是否持續
   - pii_patients 補登 HSF-002 / WCC-001 / WCC-002，並順手修正 HSF-001 的 consent 欄位
   - HSF-001 補填 D14 實際回診日期
   - check-adherence 亦以 study_status='active' 取得對象，TEST-001 在內，故會照排程對其
@@ -381,6 +458,19 @@ lesson_auth: >
   是真的，只是只涵蓋了一種收件端。
   另外，把「需要設定密碼」這個狀態放在帳號上而不是 URL 上，之後的重設功能幾乎不用
   多寫程式——清掉 password_set_at 就夠了。狀態該放在活得比一次頁面載入更久的地方。
+
+lesson_zone_a: >
+  一個欄位、一張表、一段文件，可以看起來完全正常地存在好幾個月，而從來沒有被執行過。
+  app_activated 恆為 false 因為它宣告成 NOT NULL DEFAULT FALSE——預設值把「沒有資料」
+  偽裝成「否」；pii_access_log 空著沒有任何訊號；README 那段 SQL 直到今天第一次被貼進
+  SQL Editor 才發現函式不存在、還漏了必填欄位。三者都不會自己發出聲音。
+  真正在運作的是那份 Excel 對照表，因為每收一位就得打開它一次。
+  會被使用的東西才會被發現壞掉，這是為什麼「有沒有人真的用過」比「有沒有建好」更值得問。
+
+  金鑰那件事另有一層：查不到的原因有兩種，過期還能靠延長保留期補救，
+  從未被記錄則永遠補不回來。今天以為是前者（20 天前的 log 應該沒了），
+  實際是後者（log 在，但 log_statement 不記 DML）。
+  最後能救回是靠 PI 想起字串，不是靠任何機制。
 
 lesson_notifications: >
   08-02 把提醒排程收進 fn_report_days()，那次改的是 check-adherence，理由寫得很清楚：

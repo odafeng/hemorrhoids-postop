@@ -155,18 +155,26 @@ PI 登入 dashboard → 「研究團隊管理」區塊 → 填 email + 姓名 + 
 
 步驟 4 ─（選做）建立 PII 對照表
   在 Supabase SQL Editor 執行：
-  INSERT INTO pii_patients (study_id, mrn_enc, name_enc)
+  INSERT INTO pii_patients (study_id, name_enc, birth_date_enc, mrn_enc, enrolled_by)
   VALUES ('HSF-003',
-          pgp_sym_encrypt('院內病歷號', vault.read_secret('pii_key')),
-          pgp_sym_encrypt('病人姓名',   vault.read_secret('pii_key')));
-  -- ⚠️ 不要把加密金鑰直接寫在 SQL 裡，請存在 Supabase Vault 或 env。
+          pgp_sym_encrypt('病人姓名',   '<金鑰>'),
+          pgp_sym_encrypt('YYYY-MM-DD', '<金鑰>'),
+          pgp_sym_encrypt('院內病歷號', '<金鑰>'),
+          'HSF');
+  -- name_enc / birth_date_enc / mrn_enc 三欄皆為 NOT NULL，缺一即失敗。
+  -- ⚠️ 金鑰只存在執行者手上。2026-08-12 曾因此一度無法解密既有資料，
+  --    詳見 研究日誌/2026-08-12.yaml。要避免這件事就把金鑰存進 Supabase Vault：
+  --      SELECT vault.create_secret('<金鑰>', 'pii_key', 'pii_patients 加密金鑰');
+  --    之後以 (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name='pii_key')
+  --    取代上面的 '<金鑰>'。Vault 沒有 read_secret() 函式，只能透過這個 view 讀。
 
 步驟 5 ─ 日常監控
   Researcher Dashboard：
   ├── 📊 所有病人回報狀態與趨勢（依 surgeon_id 自動過濾）
   ├── 🔔 警示列表（DB trigger 自動產生）
   ├── 💬 AI 對話審核
-  └── 🕐 系統每天 12:00 / 20:00 自動 push 提醒未回報的病人
+  └── 🕐 系統於回報日 12:00 / 20:00 自動 push 提醒未回報的病人
+       （回報日＝POD 0-7、9、11、13、20、27，見 fn_report_days()；非每日）
 ```
 
 > **每個 study_id 只能產生一次邀請碼。**已使用過的 study_id 若想重發，需先在 study_invites 表手動清除，或用新編號。
