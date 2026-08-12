@@ -2,7 +2,9 @@ date: 2026-08-12
 weekday: 三
 phase: 收案執行
 day: 21        # 自 2026-07-23 首例收案起算
-objective: 核對收案對照表與正式資料庫，補齊漏登之個案；並將測試帳號自儀表板統計中排除
+objective: >
+  核對收案對照表與正式資料庫，補齊漏登之個案；將測試帳號自儀表板統計中排除；
+  並在一名新進研究人員被鎖在帳號外之後，將研究人員帳號的發放改為由 PI 當面交付初始密碼
 
 # 註：本檔位於公開 repo，只記錄機制層級資訊。
 # 受試者姓名、病歷號、聯絡方式一律不寫入，僅以 Study ID 指涉。
@@ -54,6 +56,36 @@ findings:
       誤差每日擴大，直到 30 天上限為止。
     note: 由對照表核對順帶發現——查 TEST-001 為何不在對照表時才注意到它進了統計分母
 
+  - id: 6
+    severity: high
+    issue: 邀請信點開後直接進入儀表板，受邀者從未設定密碼
+    detail: >
+      inviteUserByEmail 建立的帳號帶有一組 GoTrue 自行產生、不對任何人顯示的隨機密碼
+      （以 pgcrypto 驗證 encrypted_password 並非空字串亦非空密碼雜湊）。App 端只辨識
+      URL hash 中的 type=recovery；supabase-js 對 invite 只發 SIGNED_IN 而非
+      PASSWORD_RECOVERY，故整套設定密碼的接線不會觸發。
+    impact: >
+      auth log 顯示當事人 12:38 點信登入，隨後在 13 分鐘內：重複點擊已失效的邀請連結五次
+      （one-time token 第二次即失效）、嘗試重新註冊一次（422 已存在）、以密碼登入兩次
+      （400 憑證錯誤）。他持有一組不可能知道的密碼。
+
+  - id: 7
+    severity: high
+    issue: 忘記密碼信在 Gmail 中不含可點擊的重設連結
+    detail: >
+      Reset Password template 為 Supabase 預設，確含 {{ .ConfirmationURL }}；
+      recovery_token 亦正常產生（56 字元）。但收件端截圖顯示末行 "Reset Password"
+      以純文字呈現，無連結樣式。兩次 /recover 之後，auth log 中沒有任何一次成功的
+      type=recovery verify。
+    contrast: >
+      2026-08-05 同一 template、同一 Resend SMTP 曾在 production 完成整段 recovery
+      流程（見該日日誌）。差異在收件端：當時為 Hotmail，本次為 Gmail。
+    status: 未確認根因。已請 PI 於 template 中加印純文字網址，該變更同時是修復也是判別工具
+    scope_note: >
+      研究人員流程已改為不寄信，故不再受此影響；但**病人端的「忘記密碼」仍走同一條路徑**，
+      且現有受試者信箱多為 Gmail。研究人員可透過 admin-reset-password 代為重設，
+      自助重設在 template 修正前仍不可靠。
+
 actions:
   performed:
     - 對照表補入 HSF-002 第 4 列：Study ID、手術日期 2026-08-08、主刀 HSF、收案日期 2026-08-07、狀態追蹤中
@@ -62,7 +94,19 @@ actions:
     - 修改前先將原檔備份至工作區外（對照表為 gitignored 個資文件，備份不進版本控制）
     - 儀表板統計與圖表排除 TEST-001（commit df48665）：
       收案列表仍照常顯示該帳號，e2e/researcher-flow.spec.ts 會斷言該列可見
+    - 受邀帳號改為必須先設定密碼才能進入儀表板（commit ba4c1d7）
+    - 研究人員帳號改為由 PI 當場設定初始密碼、當面交付，不再寄信（commit a7d1c46）
+    - researcher-manage 的 resend_activation 改為 reset_initial_password：
+      原動作呼叫 resetPasswordForEmail，即 finding 7 中已知會送出無效連結的那條路徑，
+      等於 PI 唯一的補救工具本身就是壞的
   not_performed:
+    - id: Reset Password email template 中文化與加印純文字網址
+      reason: 需於 Supabase Dashboard 操作，工作階段無 Management API token；HTML 已交付 PI
+    - id: finding 7 根因確認
+      reason: >
+        需觀察 template 修正後的下一封信。純文字網址若印得出來，代表 ConfirmationURL
+        正常而 Gmail 移除了 anchor；若印出空白，則是 ConfirmationURL 真的展開為空字串，
+        屆時再查 Site URL 與 redirect allow list
     - id: pii_patients 補登三筆
       reason: 加密通行碼由 PI 單獨保管，不經過工作階段；已備妥 SQL 交由 PI 於 Supabase SQL editor 自行執行
     - id: HSF-001 第二次回診（D14）日期
@@ -73,8 +117,21 @@ changes:
     - ResearcherDashboard 新增 NON_SUBJECT_STUDY_IDS 與 isStudySubject()，
       統計（ENROLLED / ADHERENCE / of N total）與 ResearcherCharts 改吃過濾後的陣列
     - 過濾點刻意放在統計層而非 getAllPatients()，避免同時把收案列表的該列藏掉
+    - useAuth 的 passwordRecovery 改為 passwordSetup（'recovery' | 'invite' | null）。
+      invite 的判斷讀 user_metadata.invited_at 而非 URL hash：supabase-js 在第一次載入
+      就會清掉 hash，讀 URL 等於讓「設定密碼前先重整」的人永久鎖死，而那正是要修的失效模式
+    - updatePassword 於同一次 updateUser 呼叫寫入 password_set_at，作為 invited_at 的解除條件
+    - SetNewPassword 在 invite 情境隱藏「稍後再設定」：recovery 可以拖，因為舊密碼還能用；
+      invite 拖了就是登入一個沒有任何密碼打得開的帳號
+    - researcher-invite 改用 createUser + email_confirm，接受 PI 指定的 initial_password
+    - errors.ts 移除 SMTP 與寄信頻率兩個分支（改為不寄信後永遠走不到），新增 weak_password
+    - 重設密碼按鈕不再限定 !last_sign_in_at：會需要它的帳號正好都登入過一次
   tests:
     - ResearcherDashboard.test.jsx 新增 3 項：收案數排除、依從率分母排除、列表仍可見
+    - onboarding.test.js 新增 5 項涵蓋受邀者設定密碼，含「重整後仍要求設定」的回歸測試
+    - SetNewPassword.test.jsx 新增 3 項：invite 無退出路徑、recovery 保留、歡迎文案
+    - actions.test.ts 重寫為 6 項，含「清掉 password_set_at」與「補蓋 invited_at」
+    - RED 階段實際觀察到 10 項失敗，確認測試咬得住缺陷
   unchanged:
     - v_adherence_summary 未變更。收案期間不動 production schema，
       且該 view 是 e2e 與離線分析共用的資料來源
@@ -99,6 +156,31 @@ deployment:
     以 bundle 內的字串常數驗證，不比對 hash——本機與 Vercel 的建置環境不同，
     hash 本就會相異，比 hash 會得到假陰性。
 
+deployment_auth:   # 第二次部署：研究人員帳號流程（下午）
+  status: 已部署
+  pushed: 2d137c6..a7d1c46（兩個 commit）
+  targets:
+    - target: Vercel production
+      note: >
+        ba4c1d7 的 alias 切換後，edge 節點仍持續回舊 bundle 約 16 分鐘
+        （x-vercel-cache: HIT，age 單調遞增，帶 query string 的 cache buster 亦無效）。
+        a7d1c46 的部署使其失效並更新。
+      verified: >
+        live bundle index-D211vysO.js 含 '歡迎加入，請設定您的登入密碼'、
+        '初始密碼至少需要 8 個字元'、'reset_initial_password'、'password_set_at'；
+        且 '寄出邀請信'、'重寄啟用信'、'resend_activation' 皆已消失
+    - target: Supabase Edge Functions
+      note: CI 之 Deploy Supabase job success
+      verified: researcher-invite v17、researcher-manage v18，updated_at 均為 13:26
+  split_path_window: >
+    Vercel 由 git integration 觸發、不等 CI，Edge Function 則在 CI 末段才部署，
+    兩者相隔約五分鐘。這段期間前端已是新版而函式仍是舊版：PI 若於此時按「建立帳號」，
+    舊函式會忽略 initial_password 並改回寄邀請信。已請 PI 等 CI 綠燈後再操作。
+  patient_impact: >
+    執行時間為 13:00–13:30，屬門診時段，開著 App 的患者會看到「系統已更新」橫幅。
+    此次未延至夜間：當事研究人員的 session 仍存活，部署後他重開 App 即可自行設定密碼，
+    等到晚上該 session 可能已失效。
+
 verification:
   - 全套 Vitest 33 files / 406 tests passed；npm run lint 無輸出；npm run build 成功
   - CI run 31515380806 全綠：Deno、test、e2e、Deploy Supabase 四個 job 皆 success。
@@ -109,6 +191,11 @@ verification:
   - 手術日期、收案日期、主刀醫師三欄與資料庫完全相符；邀請碼使用時間亦與收案日期吻合
   - 檔案結構未受損：兩組 data validation（主刀醫師 F6:F55、收案狀態 L6:L55）與四組合併儲存格皆保留
   - TEST-001 不在對照表為預期結果，該帳號須於資料分析前刪除
+  - 下午一輪：Vitest 33 files / 416 tests passed、Deno 31 tests passed、eslint 無輸出、build 成功
+  - CI（commit a7d1c46）四個 job 全 success，含 e2e
+  - finding 6 的證據取自 auth.users 與 auth log，非由使用者回報推測：
+    invited_at / confirmed_at / last_sign_in_at / recovery_sent_at 四個時間戳與
+    /invite、/verify、/recover、/signup、/token 的請求序列一致
 
 follow_ups:
   - pii_patients 補登 HSF-002 / WCC-001 / WCC-002，並順手修正 HSF-001 的 consent 欄位
@@ -119,8 +206,23 @@ follow_ups:
     CSV 匯出同理保留，匯出為原始資料，在該層過濾會使匯出結果與資料庫對不起來。
   - 評估在每日摘要排程加入一致性檢核：patients 有紀錄但 pii_patients 無對應者即告警。
     此檢核讀不到 Excel，只能守住加密資料表這一側，但足以在收案當天而非五天後發現漏登。
+  - Reset Password template 加印純文字網址後，重測一次並回填 finding 7 的根因
+  - 病人端「忘記密碼」在 template 修正前仍不可靠，需請研究人員以 admin-reset-password 代為處理
+  - 08-04 建立的研究人員帳號其 user_metadata 帶有 invited_at 而無 password_set_at，
+    下次登入會被要求重設密碼。若該員目前已有可用密碼且不希望被打斷，
+    可由 PI 於 SQL editor 補上 password_set_at
+  - e2e 未涵蓋受邀者設定密碼的整段流程（PI flow 測試預設 skip，需 E2E_PI_* 環境變數）。
+    本次以單元測試與 auth log 驗證，但這段動線目前沒有端到端的守門
 
 lesson: >
   對照表是唯一能把 Study ID 還原成真人的文件，更新卻全靠人工，系統這端不會知道自己
   沒被登記。HSF-002 漏登的那五天，該案照常回報症狀、照常產生資料，自動化流程沒有
   一處出錯，斷掉的只有身分那一環。這種缺漏得有人定期去對才會浮現。
+
+lesson_auth: >
+  兩個 bug 各自都不致命，疊在一起才把人鎖死：邀請信讓他登入卻沒有密碼，忘記密碼信
+  又送不出可用的連結，於是唯一的入口和唯一的補救同時失效。08-05 那次 recovery 在
+  production 驗證通過，用的是 PI 自己的 Hotmail；這次收件端是 Gmail。當時的驗證
+  是真的，只是只涵蓋了一種收件端。
+  另外，把「需要設定密碼」這個狀態放在帳號上而不是 URL 上，之後的重設功能幾乎不用
+  多寫程式——清掉 password_set_at 就夠了。狀態該放在活得比一次頁面載入更久的地方。
