@@ -106,8 +106,16 @@ verification:
 follow_ups:
   - id: 1
     item: consent_date 五筆皆為 NULL，而 consent_signed 皆為 true
-    status: 未處理
-    note: 對照表無此欄位，紙本同意書為正本，不擬推測日期。待 PI 決定是否以 patients.created_at 回填
+    status: 已處理
+    resolution: >
+      PI 指示以 patients.created_at 回填。實查發現 patients.consent_date 本就有值，
+      且為 App 實際記錄同意的時刻（較 created_at 晚 30–40 秒），語意更貼近，故改採該欄為來源。
+      兩者換算後的日曆日在這五筆完全相同，回填結果亦與對照表收案日期一致。
+    timezone_note: >
+      轉換用 (consent_date at time zone 'Asia/Taipei')::date，不是裸的 ::date。
+      這五筆直接取 UTC 日期剛好都對，但 HSF-002 的同意時刻為 14:38 UTC（台北 22:38），
+      距跨日僅 1 小時 22 分——只要有人在台北午夜前後收案就會差一天。
+      日後任何由 timestamptz 取日曆日的回填都要走這個轉換
   - id: 2
     item: 加密金鑰於本次對話中出現
     status: 待 PI 決定
