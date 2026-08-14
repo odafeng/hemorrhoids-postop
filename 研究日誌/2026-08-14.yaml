@@ -141,6 +141,16 @@ hypotheses_ruled_out:
       edge_logs 中該裝置當日每一筆 /rest/v1/alerts 皆為 200，
       含事件前 0.5 秒的那一筆。伺服器端從未拒絕。
     note: 這是最直覺的第一個假設。不查證會一路往 policy 與 grant 鑽
+    strength_downgraded:
+      date: 2026-08-15
+      reason: >
+        當晚追查 TEST-401 登入異常時發現 edge_logs 會靜默漏記：一次登入後的整批
+        REST 請求（App 端確實發出、且取回伺服器上的真實資料）在 edge_logs 完全沒有紀錄，
+        同一時段的 auth 請求與稍後另一次載入的 10 筆卻都在。
+      consequence: >
+        「沒有看到非 200」不等於「沒有發生非 200」。本則推翻由 direct 降為 corroborated——
+        方向仍成立（用戶端錯誤物件的形狀與網路失敗一致），但不能再說 edge_logs 證明伺服器全程正常。
+      lesson: 以「日誌裡沒有 X」推論「X 沒發生」之前，要先確認該日誌是完整紀錄而非取樣
 
   - hypothesis: 2026-07-26 記錄的 alerts.acknowledged_by 欄位漂移復發
     disproved_by: >
@@ -213,18 +223,39 @@ follow_ups:
     detail: 依 CLAUDE.md，比對線上 bundle 字串而非 hash
     status: 已完成（TEST-001，兩次部署皆比對字串；線上 hash 與本機三者皆異，比 hash 會連兩次假陰性）
 
-  - item: TEST-001 首次登入後，App 未向 Supabase 取任何資料卻顯示了正確畫面
+  - item: TEST-001 登入後的整批 REST 請求未出現在 edge_logs
+    status: 臨床風險已排除；可觀測性問題未解
     detail: >
       /auth/v1/token?grant_type=password 回 200，235ms 後同一端點再回 400，
       之後 edge_logs 完全沒有 /rest/v1/* 請求，但 dashboard 顯示了正確的 POD 與手術日。
-      重新載入後一切正常（10 筆 REST 全部 200）。
+      重新載入後一切正常（App 端 10 筆、edge_logs 10 筆，完全對得上）。
+    risk_disproved: >
+      原本擔心的是「病人退回讀 localStorage 的舊資料」。已推翻：
+      localStorage 的 surgery_date 為 2026-04-02 且有 5 筆四月 seed 回報，
+      但畫面顯示 2026-07-18、0 筆回報、0% 回報率——那是 TEST-001 在資料庫裡的真實值。
+      Dashboard.jsx:88 把畫面上每一個欄位都從 query 的 data 解構，沒有一個來自 userInfo，
+      所以 queryFn 確實跑完且走的是 Supabase 分支。病人沒有看到本機舊資料。
     ruled_out:
-      - demo 模式（localStorage 無 demo 旗標，session email 確為測試帳號）
-      - service worker 快取 API 回應（caches 內容僅靜態資源，無 supabase.co）
-      - edge_logs ingest 落後（15:43 那批看得到，15:37 那批至今仍無）
-    hypothesis: session 未完全建立，前端退回讀 localStorage 的 surgery_date / reports 渲染
-    risk: 若成立，病人在某些登入情境會看到本機舊資料而非伺服器資料
-    next: 另開一輪追查，與本日 Sentry 議題無關
+      - hypothesis: demo 模式
+        disproved_by: >
+          useAuth.js:184 顯示 setIsDemo(true) 只在 handleLogin 且 info.demo 為真時發生，
+          真實密碼登入不會進入該分支；且畫面資料與 localStorage 的 demo seed 完全不符
+      - hypothesis: service worker 快取 API 回應
+        disproved_by: caches 內容僅靜態資源（icon／字型／manifest），supabaseCached 為空陣列
+      - hypothesis: edge_logs ingest 落後
+        disproved_by: 15:43 那批當下即可見，15:37 那批隔了 40 分鐘仍無
+      - hypothesis: 瀏覽器 HTTP 快取供應了那批回應
+        disproved_by: >
+          PostgREST 回應無 Cache-Control 亦無 Last-Modified，Chrome 不會做啟發式快取
+    remaining: edge_logs 靜默漏記該批請求。未證明，但已無其他存活假設
+    methods_that_failed:
+      - method: 以 resource timing 的 transferSize 判斷是否來自快取
+        why: 跨來源資源受 Timing-Allow-Origin 影響而失真；同一批 transferSize 為 0 的請求確實出現在 edge_logs
+      - method: patch window.fetch 攔截 supabase 請求
+        why: supabase-js 在建立 client 時即綁定 fetch 參照，事後 patch 完全無效，捕捉到 0 筆
+    next: >
+      下次要判定，需在登入前就掛上 PerformanceObserver（不受 fetch 參照綁定影響），
+      並同時比對 App 端請求數與 edge_logs 筆數
     owner: unassigned
 
   - item: 收案對照表的「收案狀態」欄位待 PI 填寫（HSF-003/004/005）
