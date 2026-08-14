@@ -94,15 +94,24 @@ where x.study_id is null and p.study_id <> 'TEST-001';
 照抄會讓密文長度從 76 變成 78。核對不必解密——`pgp_sym_encrypt` 固定 66 bytes
 overhead，密文長度減 66 就是明文位元組數，格式對不對一眼看得出來。
 
-### 加密金鑰只在 PI 手上
+### 加密金鑰走 Vault，永遠不要寫出金鑰本身
 
-`vault.secrets` 是空的，資料庫裡也沒有任何持有金鑰的包裝函式。
-**不要請 PI 把金鑰貼進對話**——2026-08-12 已經發生過一次，金鑰輪替至今仍未決。
-做法是產生帶佔位符的 SQL，PI 自行在 Supabase SQL editor 替換後執行；
-檔案放 scratchpad，不要放進 repo。
+金鑰自 2026-08-14 起存在 Supabase Vault，名稱 `pii_encryption_key`。一律這樣取用：
 
-INSERT 前加 `SET LOCAL app.access_reason`，`fn_audit_pii_change` 才記得下來為何動這張表。
-`enrolled_at` 取 `patients.created_at`，不要用 `now()`——用 now() 記到的是補登時刻，不是收案時刻。
+```sql
+(select decrypted_secret from vault.decrypted_secrets where name = 'pii_encryption_key')
+```
+
+**不要請 PI 把金鑰貼進對話，也不要把金鑰寫進任何檔案。** 2026-08-12 曾經發生過一次，
+金鑰輪替至今仍未決；Vault 的用意就是讓這件事不必再發生。
+
+寫入 `pii_patients` 時：
+
+- INSERT 前加 `SET LOCAL app.access_reason`，`fn_audit_pii_change` 才記得下來為何動這張表
+- `enrolled_at` 取 `patients.created_at`，不要用 `now()`——用 now() 記到的是補登時刻，不是收案時刻
+- 驗證用密文長度，不要解密後回傳明文
+
+Vault 可用之後，整段流程可以直接用 Supabase MCP 執行，不必再產生帶金鑰的 SQL 檔給 PI 手動貼上。
 
 ### 改對照表的兩個坑
 
