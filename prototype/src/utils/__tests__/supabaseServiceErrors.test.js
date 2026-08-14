@@ -48,13 +48,12 @@ describe('supabaseService read-failure reporting', () => {
     expect(context.component).toBe('getAlerts');
   });
 
-  it('getAlerts records which patient hit the failure, out of Sentry', async () => {
+  it('getAlerts records which patient hit the failure', async () => {
     const sb = await import('../supabaseService');
     await expect(sb.getAlerts('AAA-001')).rejects.toBeDefined();
 
     const [, context] = logError.mock.calls[0];
-    expect(context.privateMetadata?.studyId).toBe('AAA-001');
-    expect(JSON.stringify(context.metadata ?? {})).not.toContain('AAA-001');
+    expect(context.metadata?.studyId).toBe('AAA-001');
   });
 
   it('getAllAlertsForResearcher tags the failure with a component', async () => {

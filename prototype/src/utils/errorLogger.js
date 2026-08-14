@@ -103,9 +103,6 @@ function toError(value) {
 /**
  * Log a structured error — Sentry + Supabase + console.
  * Never throws, never rejects, never re-enters itself.
- *
- * `context.metadata` goes to both Sentry and Supabase; `context.privateMetadata`
- * goes to Supabase only, for anything that should not leave the institution.
  */
 export async function logError(error, context = {}) {
   if (_inLogError) return;      // re-entrancy guard
@@ -149,7 +146,6 @@ export async function logError(error, context = {}) {
             severity,
             component: context.component || null,
             metadata: context.metadata || null,
-            privateMetadata: context.privateMetadata || null,
           }),
           user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
           url: typeof window !== 'undefined' ? window.location.href : 'unknown',

@@ -56,12 +56,18 @@ findings:
     consequence: 排除 RLS、schema、PostgREST 層的可能，範圍收斂到 fetch 中斷或 abort
 
 decisions:
-  - decision: studyId 只寫入 client_error_logs，不進 Sentry
+  - decision: studyId 隨 metadata 一併送進 Sentry
+    initial_position: >
+      實作當下 PI 尚未回覆，先取保守解：新增 context.privateMetadata，只寫入
+      client_error_logs 不進 Sentry。理由是 Study ID 雖為去識別化代碼，Sentry 仍屬院外處理者，
+      而留在院內的成本近乎為零。
+    final: >
+      同日 PI 明確裁示可送 Sentry。privateMetadata 因此失去唯一使用者，一併移除，
+      不保留無人使用的機制。studyId 改走 metadata（Sentry 與 Supabase 皆收）。
     rationale: >
-      Study ID 是去識別化代碼，但 Sentry 是院外處理者。留在院內的成本近乎為零
-      （client_error_logs 本來就會寫），因此取較保守的一邊。
-    implementation: logError 新增 context.privateMetadata，只進 Supabase 不進 scope.setContext
-    reversible: 是，若 PI 認為可送外部，把該欄併回 metadata 即可
+      Sentry 是 issue 實際被分診的地方；不知道是哪位受試者踩到，等於還是要回頭查 log，
+      通報管線的價值就少了一半。
+    note: 這是 PI 的決定，不是我的判斷——留痕以免日後誤讀成技術取捨
 
   - decision: 本次不追加重試或降級邏輯
     rationale: >
@@ -103,11 +109,12 @@ hypotheses_ruled_out:
 
 actions:
   - errorLogger.js 新增 toError()，取代原本的 String() 轉換
-  - errorLogger.js 新增 context.privateMetadata，只寫入 Supabase
-  - supabaseService.js 三處 logError 呼叫改用 type / component / metadata / privateMetadata
+  - supabaseService.js 三處 logError 呼叫改用 type / component / metadata
   - 新增測試 supabaseServiceErrors.test.js（3 則）
   - errorLogger.test.js 增補 5 則（PostgrestError 訊息保留、PostgREST code 保留、
-    無 message 物件的 JSON 退路、循環參考不 throw、privateMetadata 不進 Sentry）
+    無 message 物件的 JSON 退路、循環參考不 throw、metadata 確實送達 Sentry）
+  - 兩次部署：b93cf56（修正本體，含當時的 privateMetadata），
+    其後依 PI 裁示移除 privateMetadata 並改走 metadata
 
 verification:
   - npm test：34 檔 432 則全過（新增 8 則）

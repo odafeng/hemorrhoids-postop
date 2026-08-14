@@ -254,9 +254,9 @@ describe('errorLogger', () => {
       expect(insertFn).toHaveBeenCalled();
     });
 
-    // Study IDs identify research subjects. They belong in our own audit table,
-    // not in a third-party processor.
-    it('writes privateMetadata to Supabase but withholds it from Sentry', async () => {
+    // Whichever patient hit the failure has to reach Sentry too — that is where
+    // the issue is triaged from.
+    it('sends context metadata to Sentry, not only to Supabase', async () => {
       vi.resetModules();
       vi.stubEnv('VITE_SENTRY_DSN', 'https://test@sentry.io/123');
       const Sentry = await import('@sentry/react');
@@ -274,10 +274,10 @@ describe('errorLogger', () => {
       await mod.logError(new Error('boom'), {
         type: 'supabase_read',
         component: 'getAlerts',
-        privateMetadata: { studyId: 'AAA-001' },
+        metadata: { studyId: 'AAA-001' },
       });
 
-      expect(JSON.stringify(setContext.mock.calls)).not.toContain('AAA-001');
+      expect(JSON.stringify(setContext.mock.calls)).toContain('AAA-001');
       expect(insertFn.mock.calls[0][0].context).toContain('AAA-001');
       vi.unstubAllEnvs();
     });

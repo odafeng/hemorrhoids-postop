@@ -620,7 +620,7 @@ export async function getAlerts(studyId) {
     logError(error, {
       type: 'supabase_read',
       component: 'getAlerts',
-      privateMetadata: { studyId },   // Supabase only — study IDs stay in-house
+      metadata: { studyId },
     });
     throw error;
   }
