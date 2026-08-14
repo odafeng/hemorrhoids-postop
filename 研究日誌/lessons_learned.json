@@ -518,6 +518,77 @@
         "lessons": ["LL-2026-08-12-08"],
         "journal": ["2026-08-14.yaml#hypotheses_ruled_out"]
       }
+    },
+
+    {
+      "id": "LL-2026-08-14-03",
+      "title": "一半自動一半人工的兩份紀錄，漏的一定是人工那半",
+      "date_learned": "2026-08-14",
+      "status": "resolved",
+      "severity": "high",
+      "domains": ["data-integrity", "pii", "process"],
+      "context": "受試者身分分存兩處：patients（去識別化，App 註冊流程自動建立）與 pii_patients（加密個資，人工寫入）。",
+      "symptom": "登錄新收案時順手一比，發現三筆受試者的 patients 列都在，pii_patients 卻一筆都沒有。",
+      "root_cause": {
+        "statement": "兩張表之間沒有外鍵、沒有對帳查詢、沒有告警。自動建立的那半永遠不會漏，人工那半漏了也沒有任何東西會報錯——不一致的狀態在系統中完全合法。"
+      },
+      "evidence": {
+        "grade": "direct",
+        "items": [
+          "left join 對帳查詢一次回傳三筆缺漏，全部是同一天的收案",
+          "缺漏期間 App 功能完全正常，researcher dashboard 也正常，因為兩者都只讀 patients"
+        ]
+      },
+      "consequence": "去識別化的臨床資料存在，但身分對應只剩 Excel 對照表單一副本——而 pii_patients 存在的理由正是不要只有那一份。",
+      "resolution": {
+        "approach": "補齊三筆；把對帳查詢本身寫進 CLAUDE.md，而不是只寫一句『記得也要更新 pii_patients』。",
+        "commits": ["80447aa", "464ee49"],
+        "verification": "對帳查詢回傳空集合；刪除來源檔前另以 md5 比對確認內容等值"
+      },
+      "principle": {
+        "statement": "同一份事實分存兩處、其中一處自動一處人工時，漏的必然是人工那處。對策不是更小心，是提供一個可執行的對帳查詢。能被跑起來的檢查才算檢查，寫在流程文件裡的提醒不算。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "兩張表存同一批實體，卻沒有外鍵也沒有任何一致性檢查",
+        "流程文件寫著「別忘了也要更新 X」",
+        "不一致時系統照常運作，沒有任何錯誤或警示"
+      ],
+      "related": {
+        "lessons": ["LL-2026-08-14-01"],
+        "journal": ["2026-08-14.yaml#findings.4"],
+        "memory": ["pii-handling-policy"]
+      }
+    },
+
+    {
+      "id": "LL-2026-08-14-04",
+      "title": "刪掉來源之前，要驗的是內容等值，不是格式正確",
+      "date_learned": "2026-08-14",
+      "status": "resolved",
+      "severity": "medium",
+      "domains": ["data-integrity", "pii", "verification"],
+      "context": "三筆個資從手抄檔轉錄進加密欄位後，PI 要求刪除該手抄檔。",
+      "symptom": "密文長度、欄位型別、筆數、consent 欄位全部檢查通過——但這些全對，仍可能是把兩筆的電話對調了。",
+      "root_cause": {
+        "statement": "結構檢查驗的是「看起來像不像」，不是「是不是同一個值」。長度相同的兩筆互換，任何長度或型別檢查都驗不出來（這一點 2026-08-13 的 lesson_ciphertext_length 已經標明是該方法的上界）。"
+      },
+      "resolution": {
+        "approach": "雜湊比對：資料庫端解密後計算 md5，來源檔在本機計算同樣欄位順序的 md5，兩邊都不輸出明文，三筆全等才執行刪除。",
+        "cost": "一次查詢"
+      },
+      "principle": {
+        "statement": "破壞性動作之前的驗證，要驗到「值本身」的層級。結構完整與內容正確是兩件事，而來源一旦刪除，兩者的差別就再也無法補救。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "用長度、筆數、型別或 not-null 當作轉錄正確的證據",
+        "即將刪除、覆寫或截斷唯一一份來源資料"
+      ],
+      "related": {
+        "lessons": ["LL-2026-08-14-03"],
+        "journal": ["2026-08-14.yaml#lesson_verify_before_destroying_source"]
+      }
     }
   ],
 

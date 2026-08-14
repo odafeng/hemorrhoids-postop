@@ -3,8 +3,9 @@ weekday: 五
 phase: 收案執行
 day: 23        # 自 2026-07-23 首例收案起算
 objective: >
-  追查 Sentry 於 20:01 寄出的 production issue「Error: [object Object]」，
-  找出為何錯誤訊息完全不可讀，並修復錯誤回報管線
+  上半場：追查 Sentry 於 20:01 寄出的 production issue「Error: [object Object]」，
+  找出為何錯誤訊息完全不可讀，並修復錯誤回報管線。
+  下半場：登錄 HSF-003/004/005 三筆新收案，並把 PII 加密金鑰移入 Supabase Vault
 
 # 註：本檔位於公開 repo，只記錄機制層級資訊。
 # 受試者姓名、病歷號、聯絡方式、IP 與加密金鑰一律不寫入，僅以 Study ID 指涉。
@@ -55,6 +56,41 @@ findings:
       包含事件前 0.5 秒的 12:00:37.524（348ms）。postgrest-js 對這類情形回傳 status: 0。
     consequence: 排除 RLS、schema、PostgREST 層的可能，範圍收斂到 fetch 中斷或 abort
 
+  - id: 4
+    severity: high
+    issue: 三筆收案已在 patients，pii_patients 卻一筆都沒有，而且沒有任何地方會報錯
+    detail: >
+      HSF-003/004/005 的 patients 列由 App 註冊流程建立（手術日 2026-08-15、同意書 2026-08-14）。
+      pii_patients 需要人工加密寫入，這一步被漏掉。兩張表之間沒有外鍵、沒有對帳、沒有告警。
+    consequence: >
+      去識別化的臨床資料存在，但對應的身分資料只剩 Excel 對照表一份。
+      對照表若遺失或損毀，這三筆將無法回溯身分——而這正是 pii_patients 存在的理由。
+    detected_by: 收案登錄時順手比對，非任何自動檢查
+    fix: 已補三筆；並在 CLAUDE.md 寫入 left join 對帳查詢與「每次新收案要更新兩處」章節
+
+  - id: 5
+    severity: medium
+    issue: 同一個欄位在對照表與資料庫的格式不同，且不一致不會報錯
+    detail: >
+      聯絡電話在對照表帶破折號（0912-345-678 形式），在 pii_patients 不帶（純 10 碼）。
+      照抄對照表會讓 phone_enc 密文長度變成 78，既有五筆皆為 76。
+    detected_by: >
+      比對既有五筆的密文長度反推明文位元組數（pgp_sym_encrypt 固定 66 bytes overhead），
+      不需解密。若直接照抄，寫入會成功、查詢會正常、只有長度默默不一致。
+    fix: 寫入前正規化為純數字
+
+  - id: 6
+    severity: info
+    issue: keychain 中的 Supabase CLI token 不是可直接用於 Management API 的憑證
+    detail: >
+      嘗試以本機腳本呼叫 Management API（目的是讓金鑰與個資都不進 session）時，
+      keychain service「Supabase CLI」取出的值長度 78、前綴 go-k、零個點號——
+      是 go-keyring 的包裝值而非 JWT，API 回 401 JWT could not be decoded。
+    note: >
+      途中另遇 Cloudflare 403（error 1010），原因是 urllib 預設 User-Agent，
+      補上 UA 後即通過。兩者症狀相近但成因無關，容易誤判成同一個權限問題。
+    outcome: 放棄該路徑。金鑰改入 Vault 後問題自然消失，不需要本機直連
+
 decisions:
   - decision: studyId 隨 metadata 一併送進 Sentry
     initial_position: >
@@ -68,6 +104,31 @@ decisions:
       Sentry 是 issue 實際被分診的地方；不知道是哪位受試者踩到，等於還是要回頭查 log，
       通報管線的價值就少了一半。
     note: 這是 PI 的決定，不是我的判斷——留痕以免日後誤讀成技術取捨
+
+  - decision: PII 加密金鑰移入 Supabase Vault，名稱 pii_encryption_key
+    context: >
+      vault.secrets 原本是空的（0 筆），資料庫裡也沒有任何持有金鑰的包裝函式，
+      金鑰只存在 PI 手上。要加密就得讓金鑰以某種形式出現在指令裡。
+    rejected_paths:
+      - path: 請 PI 把金鑰貼進對話
+        why_not: 2026-08-12 已經發生過一次，金鑰輪替至今未決，重演只會讓那件事更難收拾
+      - path: 以本機腳本呼叫 Management API，金鑰與個資都不離開本機
+        why_not: keychain 的 CLI token 無法用於 Management API（見 findings.6）
+      - path: 產生填好金鑰的 SQL 檔，PI 貼進 Supabase SQL editor
+        why_not: 可行，當下也確實這樣完成了，但金鑰仍以明文落在檔案系統
+    final: >
+      PI 將金鑰存入 Vault。此後所有 PII 操作寫成
+      (select decrypted_secret from vault.decrypted_secrets where name='pii_encryption_key')，
+      金鑰不需出現在任何指令、檔案或 session 中。
+    dividend: >
+      驗證與對帳可以直接用 MCP 執行。本次的內容正確性檢查即以此完成：
+      比對「資料庫解密後的 md5」與「來源檔在本機算出的 md5」，兩邊皆不輸出明文。
+
+  - decision: 對照表的「收案狀態」留白，不代填
+    rationale: >
+      既有五筆皆為「追蹤中」，但那些受試者已完成手術；這三位手術日在隔天。
+      依下拉選項應為「已簽同意書」，但這是臨床判斷，不是資料轉錄。
+    note: 手術日期與收案日期則直接取自 production 的 patients 表，屬事實非推測
 
   - decision: 本次不追加重試或降級邏輯
     rationale: >
@@ -115,6 +176,12 @@ actions:
     無 message 物件的 JSON 退路、循環參考不 throw、metadata 確實送達 Sentry）
   - 兩次部署：b93cf56（修正本體，含當時的 privateMetadata），
     其後依 PI 裁示移除 privateMetadata 並改走 metadata
+  - 收案對照表新增第 11–13 列（HSF-003/004/005），樣式由第 10 列 _style 整份複製；
+    手術日與收案日補自 production patients 表
+  - pii_patients 補入三筆加密資料，帶 SET LOCAL app.access_reason
+  - 金鑰入 Vault；CLAUDE.md 新增「每次新收案，要更新兩個地方」章節並改寫金鑰取用方式
+  - .gitignore 補上 SECRETS / secrets / *.secrets（根目錄無副檔名，既有路徑規則擋不到）
+  - 收案完成後刪除 SECRETS 與兩份含金鑰的暫存 SQL
 
 verification:
   - npm test：34 檔 432 則全過（新增 8 則）
@@ -124,6 +191,15 @@ verification:
   - 本機 bundle 字串比對：新增 "unserializable object" 與 code=${e.code} 存在，
     舊字串 instanceof Error?e:Error(String(e)) 已消失
   - 臨床影響查核：WCC-001 僅一筆 2026-08-07 ascending_pain 警示且已 acknowledged，本次未漏警示
+  - TEST-001 於 production 實地登入：dashboard 完整渲染，瀏覽器發出 10 筆 REST，
+    edge_logs 對得上，/rest/v1/alerts 回 200
+  - 對照表寫入後比對：14 欄樣式與第 10 列全等、數字格式正確、
+    合併範圍與資料驗證（G6:G55 / M6:M55）未受影響
+  - pii_patients 寫入後比對：密文長度全部符合預期、電話符合 ^09\d{8}$、
+    enrolled_at 等於 patients.created_at、pii_access_log 三筆 insert 皆帶 access_reason
+  - 刪除 SECRETS 前先做內容等值驗證：資料庫解密後的 md5 與來源檔本機算出的 md5
+    三筆全等，確認不是只有格式對而是逐字元相同
+  - patients 與 pii_patients 對帳（left join）回傳空集合
 
 follow_ups:
   - item: 底層 fetch 失敗的真正原因仍未知
@@ -135,6 +211,27 @@ follow_ups:
 
   - item: 部署後以測試帳號實地確認前端已上線
     detail: 依 CLAUDE.md，比對線上 bundle 字串而非 hash
+    status: 已完成（TEST-001，兩次部署皆比對字串；線上 hash 與本機三者皆異，比 hash 會連兩次假陰性）
+
+  - item: TEST-001 首次登入後，App 未向 Supabase 取任何資料卻顯示了正確畫面
+    detail: >
+      /auth/v1/token?grant_type=password 回 200，235ms 後同一端點再回 400，
+      之後 edge_logs 完全沒有 /rest/v1/* 請求，但 dashboard 顯示了正確的 POD 與手術日。
+      重新載入後一切正常（10 筆 REST 全部 200）。
+    ruled_out:
+      - demo 模式（localStorage 無 demo 旗標，session email 確為測試帳號）
+      - service worker 快取 API 回應（caches 內容僅靜態資源，無 supabase.co）
+      - edge_logs ingest 落後（15:43 那批看得到，15:37 那批至今仍無）
+    hypothesis: session 未完全建立，前端退回讀 localStorage 的 surgery_date / reports 渲染
+    risk: 若成立，病人在某些登入情境會看到本機舊資料而非伺服器資料
+    next: 另開一輪追查，與本日 Sentry 議題無關
+    owner: unassigned
+
+  - item: 收案對照表的「收案狀態」欄位待 PI 填寫（HSF-003/004/005）
+    owner: PI
+
+  - item: 清空垃圾桶——SECRETS 與兩份暫存 SQL 含金鑰明文，刪除僅移至垃圾桶
+    owner: PI
 
 lesson: >
   錯誤回報管線本身要當成 production 程式碼驗證，而不是「反正只是 log」。
@@ -142,6 +239,20 @@ lesson: >
   於是雙寫的冗餘完全失效——冗餘只有在故障模式彼此獨立時才算冗餘。
   另外，getAlerts 前一行的 console.error('[getAlerts]', error.message) 一直拿得到正確訊息；
   真正的資訊就在手上，是下一行自己丟掉的。
+
+lesson_two_stores_no_reconciliation: >
+  同一份事實分存兩個地方、其中一邊由程式自動建立、另一邊靠人工，
+  漏的一定是人工那邊，而且不會有任何東西提醒你。
+  patients 由註冊流程建立所以永遠不會漏；pii_patients 靠人補所以漏了三筆，
+  中間沒有外鍵、沒有對帳、沒有告警，只有「有人剛好去看」。
+  對策不是更小心，是寫一個能跑的對帳查詢並放進 CLAUDE.md——
+  能被執行的檢查才算檢查，寫在流程文件裡的提醒不算。
+
+lesson_verify_before_destroying_source: >
+  刪掉來源檔之前，要驗證的是「內容等值」而不是「格式正確」。
+  密文長度、欄位型別、筆數全部對，仍然可能是把某兩筆的電話對調了。
+  這次的做法是雜湊比對：資料庫端解密後算 md5、來源檔在本機算 md5，兩邊都不輸出明文，
+  相等才刪。成本是一次查詢，換掉的是「刪完才發現轉錄錯了而來源已不存在」。
 
 lesson_query_false_negative: >
   對日誌／可觀測性系統下查詢時，「查無資料」與「查錯欄位」在輸出上無法區分。
