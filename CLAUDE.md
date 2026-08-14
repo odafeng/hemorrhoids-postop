@@ -70,6 +70,50 @@ grep -rln "resetPasswordForEmail" 研究日誌/
 
 **`IRB/` 唯讀。** 已送審文件不得修改；更正寫進 `收案文件/` 的執行版本，差異記入 `研究日誌/`。
 
+## 每次新收案，要更新兩個地方
+
+`patients` 那一列由 App 註冊流程自己建立，不必手動處理。會被漏掉的是這兩個：
+
+| 位置 | 內容 |
+|---|---|
+| `收案文件/收案對照表.xlsx` | 序號、Study ID、姓名、病歷號、出生日期、手術日期、主刀醫師、聯絡電話、收案日期、收案狀態 |
+| Supabase `pii_patients` | `name_enc` / `birth_date_enc` / `mrn_enc` / `phone_enc`（pgp_sym 加密），加上 consent 與 enrolled 欄位 |
+
+**兩者不會互相提醒，也不會有人報錯。** 2026-08-14 查出 HSF-003/004/005
+已經在 `patients` 裡，`pii_patients` 卻一筆都沒有。要確認有沒有漏，直接比對：
+
+```sql
+select p.study_id from patients p
+left join pii_patients x on x.study_id = p.study_id
+where x.study_id is null and p.study_id <> 'TEST-001';
+```
+
+### 同一個欄位，兩邊格式不同
+
+聯絡電話在對照表帶破折號（`0912-345-678`），在 `pii_patients` 不帶（`0912345678`）。
+照抄會讓密文長度從 76 變成 78。核對不必解密——`pgp_sym_encrypt` 固定 66 bytes
+overhead，密文長度減 66 就是明文位元組數，格式對不對一眼看得出來。
+
+### 加密金鑰只在 PI 手上
+
+`vault.secrets` 是空的，資料庫裡也沒有任何持有金鑰的包裝函式。
+**不要請 PI 把金鑰貼進對話**——2026-08-12 已經發生過一次，金鑰輪替至今仍未決。
+做法是產生帶佔位符的 SQL，PI 自行在 Supabase SQL editor 替換後執行；
+檔案放 scratchpad，不要放進 repo。
+
+INSERT 前加 `SET LOCAL app.access_reason`，`fn_audit_pii_change` 才記得下來為何動這張表。
+`enrolled_at` 取 `patients.created_at`，不要用 `now()`——用 now() 記到的是補登時刻，不是收案時刻。
+
+### 改對照表的兩個坑
+
+- **寫值不會帶樣式。** 設完 `.value` 要再 `copy()` 前一列的 `_style`，否則新列停在
+  空白列的「待填」樣式。只設 font 會漏掉 alignment / border / fill。
+- **下拉清單只涵蓋第 6–55 列**（主刀醫師 `G6:G55`、收案狀態 `M6:M55`）。
+  超出範圍要一併調整 `dv.sqref`。
+
+改動前先備份成 `收案對照表.bak-YYYYMMDD.xlsx`（`.gitignore` 已涵蓋此命名）。
+細節見 `研究日誌/2026-08-13.yaml` 與 `2026-08-14.yaml`。
+
 ## 目錄
 
 | 路徑 | 內容 |
