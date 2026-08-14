@@ -360,6 +360,11 @@
           "date": "2026-08-12",
           "what": "同日稍後把同一方法套到純邏輯改動（isReportDay），得到假陽性：grep -c \"isReportDay\\|%7\" 回報 1，但 isReportDay 命中 0（minify 後函式名不存在），命中的是別處的 %7=；且當時 bundle 尚未換版",
           "outcome": "暴露適用範圍限制，見 limits"
+        },
+        {
+          "date": "2026-08-14",
+          "what": "修 errorLogger 後驗證兩次部署：grep 新增的 \"unserializable object\" 與 code=${e.code} 命中，舊字串 instanceof Error?e:Error(String(e)) 歸零；第二次部署再確認 privateMetadata 歸零",
+          "outcome": "有效。線上 hash 為 BT5ghrLM 與 CsWeXwQJ，本機建置為 B-NVepAU——三者皆異，若比 hash 會連續兩次得到假陰性。本次改動同時帶有新增與移除字串，正好落在 limits 所述的適用範圍內。"
         }
       ]
     },
@@ -431,6 +436,88 @@
         "lessons": ["LL-2026-08-12-01"],
         "memory": ["researcher-accounts-no-invite-email", "pii-handling-policy", "repo-is-public"]
       }
+    },
+
+    {
+      "id": "LL-2026-08-14-01",
+      "title": "兩條上報路徑共用同一個轉換函式，就不算兩條",
+      "date_learned": "2026-08-14",
+      "status": "resolved",
+      "severity": "high",
+      "domains": ["observability", "error-handling", "resilience"],
+      "context": "錯誤上報刻意做成雙寫：Sentry（院外，會通知）＋ client_error_logs（院內，Sentry 掛掉時的備份）。",
+      "symptom": "production 收到 Sentry 通知，標題為 Error: [object Object]，內容不含任何可判讀的訊息；回頭查院內備份，該事件根本沒有紀錄。",
+      "root_cause": {
+        "statement": "logError 以 error instanceof Error ? error : new Error(String(error)) 統一轉換後，才分送兩條路徑。Supabase 讀取失敗回傳的是物件字面值而非 Error 實例（@supabase/postgrest-js PostgrestBuilder.ts），String() 得到 [object Object]。兩條路徑拿到的是同一個已被破壞的物件。",
+        "compounding_factor": "三處呼叫端傳的 context key（context/studyId）與 logError 讀取的 key（type/component/metadata）不符，靜默丟棄，使 Sentry tag 恆為 error_type=unknown 且無 component。"
+      },
+      "evidence": {
+        "grade": "direct",
+        "items": [
+          "curl 線上 bundle index-CiV3nnCb.js，第 39 行第 77094 欄正好落在 Error(String(e))，第 45 行確認 J_ = getAlerts",
+          "client_error_logs 全 study 僅 6 筆、全為 Script error.，無任何一筆來自 getAlerts",
+          "Sentry 信件的 tag 清單顯示 error_type=unknown 且無 component，與 key 名不符的預測一致"
+        ]
+      },
+      "resolution": {
+        "approach": "新增 toError()，物件先取 message / code / details / hint 串接，無這些欄位才 JSON.stringify（含循環參考退路）；三處呼叫端改用正確的 context key。",
+        "commits": ["b93cf56", "f81ad5c"],
+        "verification": "先確認 7 則測試 RED 且失敗原因正確，再實作至 432 則全過；部署後 curl 線上 bundle 比對字串（新字串在、舊字串消失），未比對 hash。"
+      },
+      "principle": {
+        "statement": "冗餘只有在故障模式彼此獨立時才是冗餘。兩條路徑若共用上游的任一步驟，那一步就是兩條路徑的單點故障，而且外觀上看起來仍然是兩條。",
+        "scope": "general"
+      },
+      "secondary_principle": {
+        "statement": "錯誤上報管線本身要當成 production 程式碼驗證。它平常不執行，只在出事時執行——也就是最沒有餘裕除錯的時候。未曾實際走過的路徑會靜默壞著，而錯誤處理路徑天生就是最少被走到的那一條。",
+        "scope": "general"
+      },
+      "gotcha": "getAlerts 在 logError 前一行的 console.error('[getAlerts]', error.message) 一直拿得到正確訊息。資訊就在手上，是下一行自己丟掉的——排查時值得先問「這個值在上游還完整嗎」。",
+      "recurrence_signals": [
+        "log 或監控看到 [object Object]、undefined、(no message) 這類佔位字串",
+        "把非 Error 的值（HTTP client 的 error 物件、reject 的字串、event.reason）交給只處理 Error 的函式",
+        "設計了 A 與 B 兩條備援，但兩者的輸入來自同一個前處理步驟"
+      ],
+      "related": {
+        "lessons": ["LL-2026-08-12-01", "LL-2026-08-12-04", "LL-2026-08-12-07"],
+        "journal": ["2026-08-14.yaml#findings.1"]
+      }
+    },
+
+    {
+      "id": "LL-2026-08-14-02",
+      "title": "對日誌系統下查詢，「查無資料」與「查錯欄位」在畫面上一模一樣",
+      "date_learned": "2026-08-14",
+      "status": "resolved",
+      "severity": "medium",
+      "domains": ["debugging", "observability", "methodology"],
+      "context": "以 Supabase query_logs（ClickHouse）查證某時段是否有 /rest/v1/alerts 請求送達。",
+      "symptom": "查詢回傳空陣列，一度被解讀為「請求根本沒送到 Supabase」，並據此推論網路層完全中斷。",
+      "root_cause": {
+        "statement": "過濾條件寫 log_attributes['path']，實際欄位名是 request.path。ClickHouse 對不存在的 key 回傳空值而非報錯，因此查詢語法錯誤呈現為「沒有資料」。"
+      },
+      "evidence": {
+        "grade": "direct",
+        "items": [
+          "改用 select log_attributes 無過濾撈原始記錄後，欄位名為 request.path / response.status_code",
+          "以正確欄位重查，該時段每一筆請求皆浮現且狀態為 200，與原結論完全相反"
+        ]
+      },
+      "resolution": {
+        "approach": "下任何過濾條件之前，先無條件撈一筆原始記錄確認欄位名稱。"
+      },
+      "principle": {
+        "statement": "查詢一個不熟悉的資料來源時，空結果有兩種成因：真的沒有，或問錯了。在確認過欄位名稱之前，空結果不構成證據。這是驗證方法本身失效，比被推翻的假設更難察覺——因為它不會報錯。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "第一次對某個 log／metrics 後端下查詢就帶過濾條件",
+        "用空結果去支持一個否定式結論（「沒有送出」「沒有被呼叫」「沒有發生」）"
+      ],
+      "related": {
+        "lessons": ["LL-2026-08-12-08"],
+        "journal": ["2026-08-14.yaml#hypotheses_ruled_out"]
+      }
     }
   ],
 
@@ -446,6 +533,13 @@
       "action": "評估在前端與 Edge Function 之間加入版本協商，使兩版並存視窗內的呼叫明確失敗而非靜默回退",
       "owner": "unassigned",
       "priority": "low"
+    },
+    {
+      "lesson_id": "LL-2026-08-14-01",
+      "action": "下次同類 Sentry 事件發生時，讀取其 message 與 PostgREST code，判定 2026-08-14 那次究竟是行動網路瞬斷或 in-flight 請求被 abort。此為 08-14 事件的未解根因。",
+      "owner": "unassigned",
+      "priority": "medium",
+      "note": "已無法回溯判定——當時的訊息在上報階段就被銷毀。修正後的管線是唯一取得答案的途徑。"
     }
   ],
 
