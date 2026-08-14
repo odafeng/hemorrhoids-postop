@@ -1,0 +1,142 @@
+date: 2026-08-14
+weekday: 五
+phase: 收案執行
+day: 23        # 自 2026-07-23 首例收案起算
+objective: >
+  追查 Sentry 於 20:01 寄出的 production issue「Error: [object Object]」，
+  找出為何錯誤訊息完全不可讀，並修復錯誤回報管線
+
+# 註：本檔位於公開 repo，只記錄機制層級資訊。
+# 受試者姓名、病歷號、聯絡方式、IP 與加密金鑰一律不寫入，僅以 Study ID 指涉。
+
+trigger:
+  summary: >
+    Sentry 通知信：project hemorrhoid-postop / environment production / level error，
+    標題為 Error: [object Object]，堆疊指向 queryFn 內的 Promise.all (index 2)
+  event_time: 2026-08-14T12:00:38Z   # 台灣時間 20:00:38
+  tags_in_email: [error_type=unknown, handled=yes, mechanism=generic]
+  note: >
+    信件本身沒有任何可用訊息——這正是要查的東西，而不是附帶現象
+
+findings:
+  - id: 1
+    severity: high
+    issue: logError 把非 Error 的 throw 值轉成字串，訊息就此消失
+    detail: >
+      errorLogger.js 原第 85 行 `error instanceof Error ? error : new Error(String(error))`。
+      Supabase 讀取失敗回傳的是物件字面值 {message, details, hint, code}，不是 Error 實例
+      （@supabase/postgrest-js PostgrestBuilder.ts:280-291，fetch 失敗與 PostgREST 4xx/5xx 兩條路徑皆然）。
+      String(該物件) = "[object Object]"。
+    consequence: >
+      Sentry 標題、client_error_logs.error_message 兩邊都只剩 [object Object]。
+      底層到底是網路中斷、RLS 拒絕還是 schema 不符，事後無法分辨。
+    verified_by: >
+      curl 線上 bundle index-CiV3nnCb.js，第 39 行第 77094 欄正好落在 Error(String(e))；
+      同一支 bundle 第 45 行確認 J_ = getAlerts。堆疊符號與原始碼逐字對上，非推論。
+    fix: 新增 toError()，物件先取 message / code / details / hint 串接，無這些欄位才 JSON.stringify
+
+  - id: 2
+    severity: medium
+    issue: supabaseService 三處 logError 傳的 context key 名稱與 logError 的契約不符
+    detail: >
+      呼叫端傳 { context: 'getAlerts', studyId }，但 logError 讀的是
+      context.type / context.component / context.metadata。key 名不符即靜默丟棄。
+      getAllReportsForResearcher 的 rowsFetched / from、getAllAlertsForResearcher 同樣受影響。
+    consequence: >
+      Sentry tag 恆為 error_type=unknown 且無 component；哪個 Study ID 踩到也查不出來。
+      信件裡的 tag 清單就是這個 bug 的直接證據。
+    fix: 三處改為 type/component，studyId 改走新增的 privateMetadata
+
+  - id: 3
+    severity: info
+    issue: 底層失敗發生在瀏覽器端，不在伺服器端
+    detail: >
+      edge_logs 顯示該裝置當日每一筆 GET /rest/v1/alerts 都是 200，
+      包含事件前 0.5 秒的 12:00:37.524（348ms）。postgrest-js 對這類情形回傳 status: 0。
+    consequence: 排除 RLS、schema、PostgREST 層的可能，範圍收斂到 fetch 中斷或 abort
+
+decisions:
+  - decision: studyId 只寫入 client_error_logs，不進 Sentry
+    rationale: >
+      Study ID 是去識別化代碼，但 Sentry 是院外處理者。留在院內的成本近乎為零
+      （client_error_logs 本來就會寫），因此取較保守的一邊。
+    implementation: logError 新增 context.privateMetadata，只進 Supabase 不進 scope.setContext
+    reversible: 是，若 PI 認為可送外部，把該欄併回 metadata 即可
+
+  - decision: 本次不追加重試或降級邏輯
+    rationale: >
+      useQuery 已有 retry: 2，且 12:00:50 該裝置完整五筆請求皆 200，重試已生效。
+      在還不知道底層原因前加補償邏輯，等於用猜測蓋掉訊號。
+
+hypotheses_ruled_out:
+  - hypothesis: alerts 的 RLS policy 或 schema 壞了，導致讀取被拒
+    disproved_by: >
+      edge_logs 中該裝置當日每一筆 /rest/v1/alerts 皆為 200，
+      含事件前 0.5 秒的那一筆。伺服器端從未拒絕。
+    note: 這是最直覺的第一個假設。不查證會一路往 policy 與 grant 鑽
+
+  - hypothesis: 2026-07-26 記錄的 alerts.acknowledged_by 欄位漂移復發
+    disproved_by: >
+      getAlerts 用 select('*')，缺欄位不會產生讀取錯誤；且該筆請求回 200。
+    note: 舊日誌的教訓要先確認覆蓋範圍再引用，這則不適用於本次
+
+  - hypothesis: 8/12–8/14 之間的部署造成回歸
+    disproved_by: >
+      最後一次前端改動是 8/12 的 79d787a，8/13 之後只有 db 與 docs commit。
+      線上 bundle 檔名 index-CiV3nnCb.js 與 client_error_logs 既有堆疊一致，未更換。
+
+  - hypothesis: 可以從 client_error_logs 撈到真正的錯誤訊息
+    disproved_by: >
+      該表全 study 只有 6 筆、全為 "Script error."（來自 window.onerror 的跨來源錯誤），
+      沒有任何一筆來自 getAlerts。雙寫在這條路徑上從未成功過。
+    note: >
+      雙寫設計的用意就是「Sentry 掛了還有院內備份」，但兩邊共用同一個被破壞的 errorObj，
+      所以備份備到的是同一份垃圾。冗餘只在故障模式獨立時才有價值。
+
+  - hypothesis: （方法上的死路）edge_logs 沒有該時段的 alerts 請求，代表請求根本沒送到 Supabase
+    disproved_by: >
+      查詢用了 log_attributes['path']，實際欄位名是 request.path。空結果是查詢寫錯造成的假陰性。
+      改用正確欄位後，該時段請求全部浮現。
+    note: >
+      這是本次唯一差點導致誤判的一步。ClickHouse 查詢查無資料時不會報錯，
+      與「確實沒有資料」在畫面上完全一樣——欄位名要先用一筆 select log_attributes 驗證。
+
+actions:
+  - errorLogger.js 新增 toError()，取代原本的 String() 轉換
+  - errorLogger.js 新增 context.privateMetadata，只寫入 Supabase
+  - supabaseService.js 三處 logError 呼叫改用 type / component / metadata / privateMetadata
+  - 新增測試 supabaseServiceErrors.test.js（3 則）
+  - errorLogger.test.js 增補 5 則（PostgrestError 訊息保留、PostgREST code 保留、
+    無 message 物件的 JSON 退路、循環參考不 throw、privateMetadata 不進 Sentry）
+
+verification:
+  - npm test：34 檔 432 則全過（新增 8 則）
+  - 先確認 RED：errorLogger 4 則、supabaseService 3 則皆因 [object Object] 與 context.type undefined 而失敗
+  - npm run lint：無輸出
+  - npm run build：成功
+  - 本機 bundle 字串比對：新增 "unserializable object" 與 code=${e.code} 存在，
+    舊字串 instanceof Error?e:Error(String(e)) 已消失
+  - 臨床影響查核：WCC-001 僅一筆 2026-08-07 ascending_pain 警示且已 acknowledged，本次未漏警示
+
+follow_ups:
+  - item: 底層 fetch 失敗的真正原因仍未知
+    detail: >
+      行動網路瞬斷、或病人切換 App／關閉 PWA 導致 in-flight 請求被 abort，
+      兩者訊號完全相同。正因訊息被銷毀而無法分辨。
+    next: 下次同類事件的 Sentry 標題會直接帶出 message 與 code，屆時即可判定
+    owner: 待下次事件
+
+  - item: 部署後以測試帳號實地確認前端已上線
+    detail: 依 CLAUDE.md，比對線上 bundle 字串而非 hash
+
+lesson: >
+  錯誤回報管線本身要當成 production 程式碼驗證，而不是「反正只是 log」。
+  這次 Sentry 與 client_error_logs 兩條路都在，但共用同一個把訊息銷毀的轉換函式，
+  於是雙寫的冗餘完全失效——冗餘只有在故障模式彼此獨立時才算冗餘。
+  另外，getAlerts 前一行的 console.error('[getAlerts]', error.message) 一直拿得到正確訊息；
+  真正的資訊就在手上，是下一行自己丟掉的。
+
+lesson_query_false_negative: >
+  對日誌／可觀測性系統下查詢時，「查無資料」與「查錯欄位」在輸出上無法區分。
+  下任何過濾條件之前，先無條件撈一筆原始記錄確認欄位名稱，成本一次查詢，
+  省下的是把假陰性當成證據之後的整條錯誤推論。

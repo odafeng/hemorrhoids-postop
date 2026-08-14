@@ -617,7 +617,11 @@ export async function getAlerts(studyId) {
   // fever, clots). Throw so the caller shows an error instead of an all-clear.
   if (error) {
     console.error('[getAlerts]', error.message);
-    logError(error, { context: 'getAlerts', studyId });
+    logError(error, {
+      type: 'supabase_read',
+      component: 'getAlerts',
+      privateMetadata: { studyId },   // Supabase only — study IDs stay in-house
+    });
     throw error;
   }
   return data || [];
@@ -727,7 +731,11 @@ export async function getAllReportsForResearcher() {
       // silently truncated — it would be analysed and filed with the IRB as the
       // full dataset. Fail instead; handleExportCSV already surfaces a throw.
       console.error('[getAllReportsForResearcher]', error.message);
-      logError(error, { context: 'getAllReportsForResearcher', rowsFetched: allData.length, from });
+      logError(error, {
+        type: 'supabase_read',
+        component: 'getAllReportsForResearcher',
+        metadata: { rowsFetched: allData.length, from },
+      });
       throw new Error(`資料讀取失敗（已取得 ${allData.length} 筆，資料不完整，請重試）：${error.message}`);
     }
 
@@ -748,7 +756,7 @@ export async function getAllAlertsForResearcher() {
   // look the same on the PI overview.
   if (error) {
     console.error('[getAllAlertsForResearcher]', error.message);
-    logError(error, { context: 'getAllAlertsForResearcher' });
+    logError(error, { type: 'supabase_read', component: 'getAllAlertsForResearcher' });
     throw error;
   }
   return data || [];

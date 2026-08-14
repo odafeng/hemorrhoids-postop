@@ -188,6 +188,100 @@ describe('errorLogger', () => {
       vi.unstubAllEnvs();
     });
 
+    // A Supabase read failure arrives as a plain object literal, not an Error
+    // — see @supabase/postgrest-js PostgrestBuilder.ts. String(obj) on it
+    // yields "[object Object]" and the real cause is gone for good.
+    it('preserves the message of a PostgrestError instead of stringifying it', async () => {
+      vi.resetModules();
+      const supabaseMock = (await import('../supabaseClient')).default;
+      const insertFn = vi.fn().mockResolvedValue({ data: null, error: null });
+      supabaseMock.from = vi.fn().mockReturnValue({ insert: insertFn });
+
+      const { logError } = await import('../errorLogger');
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      await logError(
+        { message: 'TypeError: Failed to fetch', details: 'stack here', hint: '', code: '' },
+        { type: 'supabase_read', component: 'getAlerts' },
+      );
+
+      const row = insertFn.mock.calls[0][0];
+      expect(row.error_message).toContain('Failed to fetch');
+      expect(row.error_message).not.toContain('[object Object]');
+    });
+
+    it('keeps the PostgREST code so RLS failures stay distinguishable', async () => {
+      vi.resetModules();
+      const supabaseMock = (await import('../supabaseClient')).default;
+      const insertFn = vi.fn().mockResolvedValue({ data: null, error: null });
+      supabaseMock.from = vi.fn().mockReturnValue({ insert: insertFn });
+
+      const { logError } = await import('../errorLogger');
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      await logError(
+        { message: 'permission denied for table alerts', details: '', hint: '', code: '42501' },
+        { type: 'supabase_read', component: 'getAlerts' },
+      );
+
+      expect(insertFn.mock.calls[0][0].error_message).toContain('42501');
+    });
+
+    it('falls back to JSON for an object with no message field', async () => {
+      vi.resetModules();
+      const supabaseMock = (await import('../supabaseClient')).default;
+      const insertFn = vi.fn().mockResolvedValue({ data: null, error: null });
+      supabaseMock.from = vi.fn().mockReturnValue({ insert: insertFn });
+
+      const { logError } = await import('../errorLogger');
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      await logError({ unexpected: 'shape' }, { type: 'test' });
+
+      const row = insertFn.mock.calls[0][0];
+      expect(row.error_message).toContain('unexpected');
+      expect(row.error_message).not.toContain('[object Object]');
+    });
+
+    it('survives an object that cannot be serialized', async () => {
+      vi.resetModules();
+      const supabaseMock = (await import('../supabaseClient')).default;
+      const insertFn = vi.fn().mockResolvedValue({ data: null, error: null });
+      supabaseMock.from = vi.fn().mockReturnValue({ insert: insertFn });
+
+      const { logError } = await import('../errorLogger');
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const circular = {};
+      circular.self = circular;
+      await expect(logError(circular, { type: 'test' })).resolves.not.toThrow();
+      expect(insertFn).toHaveBeenCalled();
+    });
+
+    // Study IDs identify research subjects. They belong in our own audit table,
+    // not in a third-party processor.
+    it('writes privateMetadata to Supabase but withholds it from Sentry', async () => {
+      vi.resetModules();
+      vi.stubEnv('VITE_SENTRY_DSN', 'https://test@sentry.io/123');
+      const Sentry = await import('@sentry/react');
+      const setContext = vi.fn();
+      Sentry.withScope.mockImplementation((cb) =>
+        cb({ setLevel: vi.fn(), setTag: vi.fn(), setContext }));
+
+      const supabaseMock = (await import('../supabaseClient')).default;
+      const insertFn = vi.fn().mockResolvedValue({ data: null, error: null });
+      supabaseMock.from = vi.fn().mockReturnValue({ insert: insertFn });
+
+      const mod = await import('../errorLogger');
+      mod.initSentry();
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      await mod.logError(new Error('boom'), {
+        type: 'supabase_read',
+        component: 'getAlerts',
+        privateMetadata: { studyId: 'AAA-001' },
+      });
+
+      expect(JSON.stringify(setContext.mock.calls)).not.toContain('AAA-001');
+      expect(insertFn.mock.calls[0][0].context).toContain('AAA-001');
+      vi.unstubAllEnvs();
+    });
+
     it('includes context metadata when provided', async () => {
       vi.resetModules();
       const supabaseMock = (await import('../supabaseClient')).default;

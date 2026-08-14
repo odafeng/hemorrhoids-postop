@@ -71,8 +71,41 @@ function shouldLog() {
 }
 
 /**
+ * Coerce anything thrown into an Error that still says what went wrong.
+ *
+ * Supabase read failures arrive as a plain object literal — `{message, details,
+ * hint, code}`, not an Error (see @supabase/postgrest-js PostgrestBuilder.ts).
+ * `String(obj)` on those yields "[object Object]", which is what production
+ * reported for a month: the cause was destroyed at the point of logging.
+ */
+function toError(value) {
+  if (value instanceof Error) return value;
+  if (value && typeof value === 'object') {
+    const parts = [
+      value.message,
+      value.code ? `code=${value.code}` : null,
+      value.details,
+      value.hint,
+    ].filter(Boolean);
+    let text;
+    if (parts.length) {
+      text = parts.join(' | ');
+    } else {
+      try { text = JSON.stringify(value); } catch { text = '(unserializable object)'; }
+    }
+    const err = new Error(text);
+    if (value.name) err.name = value.name;
+    return err;
+  }
+  return new Error(String(value));
+}
+
+/**
  * Log a structured error — Sentry + Supabase + console.
  * Never throws, never rejects, never re-enters itself.
+ *
+ * `context.metadata` goes to both Sentry and Supabase; `context.privateMetadata`
+ * goes to Supabase only, for anything that should not leave the institution.
  */
 export async function logError(error, context = {}) {
   if (_inLogError) return;      // re-entrancy guard
@@ -82,7 +115,7 @@ export async function logError(error, context = {}) {
     const severity = context.severity || Severity.ERROR;
     let errorObj;
     try {
-      errorObj = error instanceof Error ? error : new Error(String(error));
+      errorObj = toError(error);
     } catch {
       errorObj = new Error('unserializable error');
     }
@@ -116,6 +149,7 @@ export async function logError(error, context = {}) {
             severity,
             component: context.component || null,
             metadata: context.metadata || null,
+            privateMetadata: context.privateMetadata || null,
           }),
           user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
           url: typeof window !== 'undefined' ? window.location.href : 'unknown',
