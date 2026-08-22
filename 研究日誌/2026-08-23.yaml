@@ -1,0 +1,132 @@
+date: 2026-08-23
+weekday: 日
+phase: 收案執行
+day: 32        # 自 2026-07-23 首例收案起算
+objective: >
+  起點是 PI 的一句確認：「第 14 天會跳出滿意度問卷嗎？」查證過程牽出三件事——
+  問卷的曝光機制與提醒排程剛好錯開、已填的兩份問卷指向 pain NRS 的一個測量缺口、
+  以及每日 ntfy 摘要腳本從未套用回報日規則，長期送出假警報。
+
+# 註：本檔位於公開 repo，只記錄機制層級資訊。
+# 受試者姓名、病歷號、聯絡方式與加密金鑰一律不寫入，僅以 Study ID 指涉。
+# 本日引用了一則受試者的問卷自由文字（不含任何識別資訊），PI 若認為不宜請逕行刪除。
+
+trigger:
+  summary: >
+    PI 詢問 POD 14 是否會「跳出」滿意度問卷。用詞本身即為要查證的對象——
+    是彈窗、推播，還是要病人自己開 App 才看得到，三者對填答率的解讀完全不同。
+  event_time: 2026-08-23T16:01:00Z   # 台灣時間 2026-08-24 00:01
+
+findings:
+  - id: 1
+    severity: info
+    issue: 可用性問卷不會「跳出」，它是 Dashboard 上一張要自己去看的卡片
+    detail: >
+      Dashboard.jsx:159 條件為 `pod >= 14 && !surveyDone`，surveyDone 來自
+      hooks.js:91 的 `!!survey`（查 usability_surveys 有無該 study_id 的列）。
+      全 codebase 只有 Dashboard.jsx:174 一處導向 'survey'，導覽列沒有入口。
+      supabase/functions/ 內 grep `survey|問卷` 零命中，伺服器端不知道問卷存在。
+    consequence: >
+      病人沒有主動開 App 就不會知道有問卷。填答率量到的是 App 開啟行為，
+      不是填答意願，撰稿時需分辨。
+
+  - id: 2
+    severity: medium
+    issue: 問卷卡片出現的那一天，剛好是提醒系統保證不會叫人的那一天
+    detail: >
+      回報日為 POD 0-7、9、11、13、20、27（fn_report_days()）。POD 14 不在其中，
+      前端 isReportDay() 與伺服器端 check-adherence 當天都靜音。
+      卡片門檻 pod >= 14 寫死在 Dashboard.jsx，與 fn_report_days() 無任何交互引用。
+    consequence: >
+      最接近的推播在 POD 13（卡片還沒出現），下一次要等 POD 20。中間六天
+      完全靠病人自發開 App。WCC-002 於 2026-08-23 已掛卡片 3 天未填。
+    verified_by: >
+      對 production 查詢：已達 POD 14 者 4 人（HSF-001 POD29、WCC-001 POD17、
+      WCC-002 POD17、HSF-002 POD14），已填 2 人。
+    fix: >
+      未改 production。改以每日 ntfy 摘要新增「可用性問卷未填」區塊，
+      伺服器端主動列出誰還沒填、卡片掛了幾天、下次推播在哪一天。
+
+  - id: 3
+    severity: high
+    issue: pain NRS 沒有定義量測時點，計畫書、CRF、App 三份文件一致地都沒寫
+    detail: >
+      IRB 計畫書 ver2 §4.1「疼痛分數：採 Numeric Rating Scale (NRS) 0-10 [15]
+      （validated instrument）」、CRF ver1「1. 疼痛分數（NRS 0-10）」、
+      App SymptomReport.jsx:246「疼痛分數 NRS 0–10」——三者皆無 recall anchor。
+      發現來源是 HSF-001 於 POD 14 問卷自由文字欄的回饋，內容指出同一天服藥前後
+      疼痛不同，填寫時不知該填哪個。
+    consequence: >
+      影響全部 81 筆 pain_nrs（8 位受試者，2026-07-24 至 08-22）。
+      symptom_reports 無任何用藥欄位，事後無法校正。
+      §4.2 的「疼痛遞增警示（連續 3 天逐日上升）」對 anchor 漂移特別敏感，
+      該警示至今已觸發 1 次，是否為假警報無法回溯判定。
+    verified_by: >
+      三份文件逐字擷取比對（IRB docx 解 XML、App 原始碼、production schema 欄位清單）。
+      另查填答時刻分散度：SD 自 0.78 小時（WCC-001，幾乎固定 20:00 後）
+      到 10.25 小時（HSF-004，01:11 至 22:43）。此項為弱證據，見 hypotheses_ruled_out。
+    fix: >
+      不改 production 題目文字——收案期間換題目會製造兩批不可合併的資料。
+      寫入 docs/research/2026-08-12-primary-outcome-measurement-gaps.md 缺口四，
+      待決事項彙整補列第 8-10 項。
+
+  - id: 4
+    severity: medium
+    issue: 每日 ntfy 摘要腳本從未套用回報日規則，47% 的「有人未填」是假警報
+    detail: >
+      ~/.hemorrhoids-daily/daily_summary.py（repo 外）的 due 計數把每一天都當回報日。
+      非回報日的病人一律標成「⚠️ 未填」，並使 missing > 0 把 priority 拉到 high。
+      這與 2026-08-12 修掉的前端 startReminderScheduler 是同一個 bug，
+      只是規則的拷貝數從兩份變成三份。
+    consequence: >
+      回算 2026-07-24 至 08-22 共 30 天：19 天會被標成有人未填，
+      實際漏掉回報日的只有 10 天，9 天（47%）為純假警報。
+      每日推播長期停在 high，真正漏填的那天分不出來。
+    verified_by: >
+      單一 SQL 以 fn_report_days() 對 30 天逐日回算 old_missing 與 new_missing。
+      修正後乾跑 08-22 得「已填 3/4（另有 1 筆非回報日的額外回報）」，
+      08-21 得 4/4 且 priority 由 high 降為 default。
+    fix: >
+      腳本改為直接查 fn_report_days()（它以 postgres 身分執行 SQL，可直接讀），
+      不再抄第四份規則。非回報日標「—」、額外回報標「➕」，兩者皆不計入 due。
+
+hypotheses_ruled_out:
+  - hypothesis: POD 14 會有彈窗或推播主動提醒病人填問卷
+    disproved_by: >
+      Dashboard.jsx:159 是一張 inline 卡片；supabase/functions/ 內 survey/問卷 零命中；
+      POD 14 不在 fn_report_days() 內，前後端當天都不發任何提醒。
+
+  - hypothesis: 問卷沒填是因為病人不想填
+    disproved_by: >
+      兩位填答者的 pod_at_survey 都是 14，即卡片出現當天就填完。
+      瓶頸在曝光不在意願。惟 n=2，僅足以推翻「不想填」這個單一解釋，
+      不足以支持「只要看到就會填」。
+
+  - hypothesis: HSF-001 的自由文字是介面易用性的回饋
+    disproved_by: >
+      內容講的是同一天服藥前後疼痛不同、不知道該填哪個數字，
+      屬 pain NRS 的 construct validity 問題，與介面無關。
+      Likert 五題全 5 分沒有指出任何東西，指出問題的是自由文字欄。
+
+  - hypothesis: 填答時刻的分散度可以證明 pain 分數受用藥週期影響
+    disproved_by: >
+      沒有收服藥時間，SD 只證明「填答時刻不固定」，無法連到「分數因此偏移」。
+      這是我自己的驗證方法不成立，不是資料不足——就算再多受試者，
+      沒有用藥欄位一樣推不出這個結論。降級為弱證據並在文件中標明。
+
+actions:
+  - 補寫 docs/research/2026-08-12-primary-outcome-measurement-gaps.md 缺口四
+    （pain NRS anchor、可用性問卷觸頂），並更新該文「待決事項彙整」與「未涵蓋」
+  - 修正 ~/.hemorrhoids-daily/daily_summary.py：套用 fn_report_days()、
+    新增可用性問卷未填區塊。備份 daily_summary.py.bak-20260823
+
+deliberately_not_done:
+  - 不改 App 的疼痛題文字。收案期間變更題目會讓前後兩批受試者填不同的工具
+  - 不改 daily_summary.py 的 priority 邏輯。問卷待填會持續數日，
+    若讓它升級 priority 會長期蓋掉真正的臨床警示
+  - 不在研究者儀表板增列問卷未填標示。屬新功能，收案期間不動 production
+
+open_questions:
+  - pain_nrs 於分析時如何解讀（limitation 明載，或改以 within-patient trend 為主）
+  - 是否送 IRB 修正案補上 NRS anchor 定義，以及是否同時收「填答前 4 小時內是否服藥」
+  - 可用性問卷若在 n=50 仍觸頂，改報中位數與全距並以自由文字為主要證據
