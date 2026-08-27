@@ -100,6 +100,32 @@ findings:
       新定義 90%（9/10）。唯一未啟用者為 FIH-003，其手術日即為今日，
       尚未到第一次回報。
 
+  - id: 7
+    severity: high
+    issue: 追蹤期結束在系統的任何一端都不會出聲，HSF-001 已逾期五天仍為 active
+    detail: >
+      fn_report_days() 回傳 [0,1,2,3,4,5,6,7,9,11,13,20,27]——POD 30 不是回報日，
+      最後一個是 POD 27。病人端在 POD 30 當天不會有推播也不會有卡片；
+      每日摘要腳本的主迴圈又在 pod > FOLLOWUP_DAYS 直接 continue，
+      逾期者從畫面上消失。HSF-001 手術日 2026-07-24，POD 30 為 2026-08-23，
+      今日為 POD 35，study_status 仍為 active，回報 9/13。
+    consequence: >
+      追蹤期結束是純行政終點，沒有任何機制提示。第一位受試者已經漏過去五天。
+
+  - id: 8
+    severity: medium
+    issue: study_status 只有寫入 'active' 的地方，沒有任何地方寫 completed 或 withdrawn
+    detail: >
+      全 codebase 對 study_status 的寫入僅 patient-onboard/index.ts:232 一處，
+      值寫死為 "active"。completed_at 欄位亦從未被寫過。
+      讀取端有 check-adherence（.eq("study_status","active")）、
+      多個 view 的 WHERE study_status != 'withdrawn'、dashboard.py 的表格欄位。
+    consequence: >
+      與 app_activated 同構：宣告了 DEFAULT、有讀取端、沒有寫入端。
+      直接影響本日新增的逾期清單——不手動改 study_status 的話它會單調成長。
+      推播端無害：patientsDueForReminder 以 reportDays 過濾，
+      最大回報日 27，逾期者不會被誤推播。
+
 hypotheses_ruled_out:
   - hypothesis: 對照表裡有受試者的 PII 尚未寫入 pii_patients
     disproved_by: >
@@ -130,6 +156,12 @@ hypotheses_ruled_out:
       指出的問題同構，只是假陰性換成假陽性；DROP COLUMN 屬收案期間的
       production schema 變更。實際讀取端只有 dashboard.py 兩處本機腳本，
       改讀取端即可，不需要任何 DDL。
+
+  - hypothesis: 逾期未結案的病人可能還在被 check-adherence 誤推播提醒
+    disproved_by: >
+      check-adherence 雖以 study_status='active' 取病人，但 patientsDueForReminder
+      再以 fn_report_days() 過濾，最大回報日為 27，POD 30 之後不可能被判定為 due。
+      逾期只影響本日新增的摘要清單，不影響受試者收到的推播。
 
   - hypothesis: 收案日期可從手術日期減一天推得
     disproved_by: >
@@ -171,6 +203,29 @@ decisions:
       缺點是 POD 0 當日收案者必然計為未啟用（本次的 FIH-003 即是），
       分母含當日收案者時啟用率會被低估。
 
+  - id: D6
+    decision: >
+      每日 ntfy 摘要新增兩段：POD 23–30 的「⏳ POD30 倒數」與
+      「🔴 已過 POD30 未結案」，後者使 priority 至少為 high
+    rationale: >
+      PI 要求「POD30 前一週提醒」。做成每日倒數而非單次提醒，是因為單次提醒
+      當天沒看手機就完全錯過，沒有第二次機會；每日摘要本來就每天推，
+      掛在既有推播上不增加通知數量。
+      逾期段是 PI 明示要加的：倒數只對還沒到期的人有用，抓不到已經漏掉的
+      （HSF-001 現在就在漏）。
+    trade_off: >
+      同一個人會連續出現八天（POD 23–30）。逾期段在 study_status 沒有寫入端的
+      現況下會單調成長，需要 PI 手動結案才會消失——這使得「清單變長」本身
+      成為提示，但也可能在多位受試者同時逾期時變成噪音。
+      「回報 X/Y」的分母定義為「到當日為止已過去的回報日數」，
+      與 v_adherence_summary 的分母不必然相同，兩者不可直接比對。
+
+  - id: D7
+    decision: 不代為將 HSF-001 的 study_status 改為 completed
+    rationale: >
+      結案與否是研究判斷（D28 回診是否完成、CRF 是否收齊），不是資料清理。
+      逾期清單會持續提示直到 PI 自行處理。
+
 verification:
   scope: >
     只驗證兩筆新列的寫入正確性與既有八筆的持續一致性，未重新驗證加密金鑰本身，
@@ -193,6 +248,14 @@ verification:
       將 compute() 還原為舊的 app_activated 邏輯後 4 項轉紅（mutation check），
       確認測試確實守得住這次改動而非恆綠
     - dashboard.py 內已無 app_activated 的功能性參照（僅剩一行註解說明原因）
+    - 每日摘要新段落以四個模擬日期驗證邊界：08-26（WCC POD22，倒數段不出現）、
+      08-28（WCC POD23，倒數段出現）、09-04（WCC POD30 顯示「今天到期」）、
+      09-14（多人逾期時的排序與計數）。驗證時直接呼叫 build_summary()，
+      不經過 push()，避免測試推播洗手機
+    - 以 /usr/bin/python3（3.9.6，launchd plist 指定的直譯器）確認可執行，
+      非開發機上的 homebrew 3.14
+    - 端到端實跑一次含推播（SUMMARY_DATE=2026-08-28），
+      keychain 取 token 與 ntfy 送達皆正常，exit 0
 
 deliberately_not_done:
   - HSF-001 與 FIH-001 的 enrolled_at 未回填。影響收案時刻的精確度，
@@ -205,4 +268,8 @@ deliberately_not_done:
     cd prototype && python3 -m unittest discover -s scripts -p 'test_*.py'
   - dashboard.py 的 module 層副作用（_load_key 的 SystemExit、OUTPUT_DIR.mkdir）
     未重構。測試改以 import 前設環境變數繞過，避免把改動擴散到本次範圍之外
+  - 未替 HSF-001 結案（見 D7），亦未處理 study_status 沒有寫入端這件事本身。
+    要在 App 端補結案流程屬收案期間的行為變更，需另行決定
+  - 每日摘要腳本位於 ~/.hemorrhoids-daily/（repo 外、perms 700、不進版本控制），
+    本次改動只能靠此日誌與 memory 記錄，git log 查不到
   - 未清理 transcript 與 claude-mem 中的識別資料（見 findings 5）
