@@ -5,7 +5,11 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { createTestQueryClient } from '../../test-utils';
 import ResearcherDashboard from '../ResearcherDashboard';
 
-vi.mock('../../utils/supabaseService', () => ({
+// Only the I/O is stubbed. getPODFromDate and friends are pure date arithmetic the
+// dashboard genuinely uses; replacing them with undefined made the whole component
+// throw on render, which reads as nine unrelated failures.
+vi.mock('../../utils/supabaseService', async (importOriginal) => ({
+  ...(await importOriginal()),
   getAllPatients: vi.fn(),
   getAdherenceSummary: vi.fn(),
   getAllAlertsForResearcher: vi.fn(),

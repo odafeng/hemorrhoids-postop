@@ -4,6 +4,7 @@ import { getResearcherMockData } from '../utils/storage';
 import * as sb from '../utils/supabaseService';
 import ResearcherCharts from '../components/ResearcherCharts';
 import { downloadCSV, downloadJSON } from '../utils/csvExport';
+import { closeOutBadge, closeOutState } from '../utils/followup';
 import * as I from '../components/Icons';
 
 const SURGEON_NAMES = {
@@ -223,6 +224,11 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
   const avgAdherence = studyAdherence.length > 0
     ? (studyAdherence.reduce((sum, a) => sum + Number(a.adherence_pct), 0) / studyAdherence.length).toFixed(1)
     : 0;
+  const closeStates = studyPatients.map(p => closeOutState(
+    p.study_status, p.surgery_date ? sb.getPODFromDate(p.surgery_date) : null, p.surgery_date));
+  const closedCount = closeStates.filter(c => c.kind === 'closed').length;
+  const overdueCount = closeStates.filter(c => c.kind === 'overdue').length;
+  const closingCount = closeStates.filter(c => c.kind === 'closing' || c.kind === 'due').length;
   const activeAlerts = alerts.filter(a => !a.acknowledged).length;
 
   const handleAcknowledge = async (alertId) => {
@@ -296,10 +302,11 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
   const patientRows = patients
     .map(p => {
       const adh = adherence.find(a => a.study_id === p.study_id) || {};
-      const podNum = p.surgery_date
-        ? Math.max(0, Math.floor((new Date() - new Date(p.surgery_date)) / 86400000))
-        : null;
-      return { ...p, ...adh, _surgeonId: getSurgeonId(p), _pod: podNum };
+      const podNum = p.surgery_date ? sb.getPODFromDate(p.surgery_date) : null;
+      return {
+        ...p, ...adh, _surgeonId: getSurgeonId(p), _pod: podNum,
+        _close: closeOutState(p.study_status, podNum, p.surgery_date),
+      };
     })
     .filter(p => surgeonFilter === 'all' || p._surgeonId === surgeonFilter);
 
@@ -368,6 +375,15 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
             {avgAdherence}<span className="sub">%</span>
           </div>
           <div className={`stat-foot ${avgAdherence >= 70 ? 'ok' : 'warn'}`}>目標 ≥ 70%</div>
+        </div>
+        <div className="stat-card" data-tone={overdueCount > 0 ? 'danger' : null}>
+          <div className="stat-lbl">CLOSE-OUT</div>
+          <div className="stat-val">{closedCount}</div>
+          <div className={`stat-foot ${overdueCount > 0 ? 'danger' : closingCount > 0 ? 'warn' : 'ok'}`}>
+            {overdueCount > 0
+              ? `${overdueCount} 人逾期未結案`
+              : closingCount > 0 ? `${closingCount} 人一週內到期` : '無待結案'}
+          </div>
         </div>
         <div className="stat-card" data-tone={activeAlerts > 0 ? 'danger' : null}>
           <div className="stat-lbl">ALERTS</div>
@@ -799,6 +815,7 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
         {patientRows.map(row => {
           const tone = statusTone(row);
           const podLabel = row._pod === null ? '—' : row._pod === 0 ? 'OP' : `POD ${row._pod}`;
+          const closeBadge = closeOutBadge(row._close);
           return (
             <div key={row.study_id} className="cohort-row" data-tone={tone}
               role={!isDemo ? 'button' : undefined}
@@ -813,6 +830,14 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
                 <span>{podLabel}</span>
                 <span>·</span>
                 <span>{SURGEON_NAMES[row._surgeonId] || row._surgeonId || '—'}</span>
+                {closeBadge && (
+                  <>
+                    <span>·</span>
+                    <span style={{ color: `var(--${closeBadge.tone})`, fontWeight: 600 }}>
+                      {closeBadge.text}
+                    </span>
+                  </>
+                )}
               </div>
               <div className="cr-pain">
                 <div className="cr-pain-num">{row.avg_pain ?? '—'}</div>

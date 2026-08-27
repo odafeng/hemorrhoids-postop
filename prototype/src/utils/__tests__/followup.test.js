@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   CLOSE_WARNING_DAYS,
+  closeOutBadge,
   closeOutState,
   FOLLOWUP_DAYS,
   followUpEndsOn,
@@ -56,6 +57,32 @@ describe('closeOutState', () => {
 
   it('carries the endpoint date for display', () => {
     expect(at(23).endsOn).toBe('2026-08-23');
+  });
+});
+
+describe('closeOutBadge', () => {
+  const badgeAt = (pod, status = STUDY_STATUS.ACTIVE) =>
+    closeOutBadge(closeOutState(status, pod, SURGERY));
+
+  it('says nothing mid-follow-up, so the badge means something when it appears', () => {
+    expect(badgeAt(10)).toBeNull();
+    expect(badgeAt(22)).toBeNull();
+  });
+
+  it('counts down, then calls the day, then counts up', () => {
+    expect(badgeAt(23)).toEqual({ text: '結案剩 7 天', tone: 'warn' });
+    expect(badgeAt(30)).toEqual({ text: '今天到期', tone: 'warn' });
+    expect(badgeAt(35)).toEqual({ text: '逾期 5 天未結案', tone: 'danger' });
+  });
+
+  it('reports a closed or withdrawn subject without alarm', () => {
+    expect(badgeAt(35, STUDY_STATUS.COMPLETED)).toEqual({ text: '已結案', tone: 'ok' });
+    expect(badgeAt(35, STUDY_STATUS.WITHDRAWN).tone).toBe('ink-3');
+  });
+
+  it('survives being handed nothing', () => {
+    expect(closeOutBadge(null)).toBeNull();
+    expect(closeOutBadge(undefined)).toBeNull();
   });
 });
 
