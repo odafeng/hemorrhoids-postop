@@ -96,6 +96,9 @@ findings:
       改 DEFAULT 為 TRUE 會把「沒有資料」偽裝成「是」，方向與 lesson_zone_a
       指出的問題相同，只是把假陰性換成假陽性；DROP COLUMN 屬收案期間的
       production schema 變更。兩者都不必動就能解決讀取端。
+      已改讀取端（見 D5）：舊定義啟用率 0%（十筆全 false），
+      新定義 90%（9/10）。唯一未啟用者為 FIH-003，其手術日即為今日，
+      尚未到第一次回報。
 
 hypotheses_ruled_out:
   - hypothesis: 對照表裡有受試者的 PII 尚未寫入 pii_patients
@@ -113,6 +116,20 @@ hypotheses_ruled_out:
     disproved_by: >
       第 15 列（奇數，待填區有 banding）與第 13 列在全部 14 欄的 style id 都不同，
       不只 C/D/H。只複製有值欄位會讓 J/K/L/N 留下 FFF2F7FB 底色。
+
+  - hypothesis: FIH 收案的三筆 app_activated 皆為 false，可能是該收案者的啟用流程有問題
+    disproved_by: >
+      症狀回報筆數顯示 FIH-001 有 6 筆、FIH-002 手術隔日即回報 1 筆，
+      兩人都在使用 App。false 是死欄位的假象而非啟用問題。
+      FIH-003 為 0 筆，但其手術日即為今日（POD 0）。
+      FIH-001 依從性偏低另有原因（2026-08-23 已查明為缺 push subscription），與此無關。
+
+  - hypothesis: app_activated 應該改成 DEFAULT TRUE，或直接 DROP COLUMN
+    disproved_by: >
+      DEFAULT TRUE 會把「沒有資料」偽裝成「是」，與 2026-08-12 lesson_zone_a
+      指出的問題同構，只是假陰性換成假陽性；DROP COLUMN 屬收案期間的
+      production schema 變更。實際讀取端只有 dashboard.py 兩處本機腳本，
+      改讀取端即可，不需要任何 DDL。
 
   - hypothesis: 收案日期可從手術日期減一天推得
     disproved_by: >
@@ -138,6 +155,22 @@ decisions:
     decision: 對照表新增列一律整列 A–N 複製前一資料列的 _style
     rationale: 見 findings 2，parity 使得部分複製會殘留 banding。
 
+  - id: D5
+    decision: >
+      dashboard.py 的啟用率改以「該 study_id 至少有一筆 symptom_report」認定，
+      app_activated 欄位保留在 schema 中不動
+    rationale: >
+      落實 2026-08-12 已下的決議（啟用率改以首次回報計），該決議當時未同步到讀取端。
+      改動 6 行、只在 compute() 收斂一次 study_id 集合供兩處讀取端共用，
+      不多打 API 也不在 render 階段重掃 reports。
+      欄位留作死欄位，待收案結束後隨其他 migration 一併清除。
+    trade_off: >
+      「有回報」量到的是受試者實際使用行為，「有 push subscription」量到的是
+      通知管道是否接通，兩者不同。此處選前者，因為 primary outcome 關心的是
+      回報行為本身；管道問題另由 push subscription 檢查涵蓋。
+      缺點是 POD 0 當日收案者必然計為未啟用（本次的 FIH-003 即是），
+      分母含當日收案者時啟用率會被低估。
+
 verification:
   scope: >
     只驗證兩筆新列的寫入正確性與既有八筆的持續一致性，未重新驗證加密金鑰本身，
@@ -156,13 +189,20 @@ verification:
       與來源格式相符；enrolled_at = patients.created_at 為 true
     - patients.surgery_date（2026-08-27、2026-08-28）與對照表 F 欄一致，
       consent_date 取自 patients.consent_date 轉台灣時間
+    - dashboard.py 改動後 scripts/test_dashboard.py 7 項全過；
+      將 compute() 還原為舊的 app_activated 邏輯後 4 項轉紅（mutation check），
+      確認測試確實守得住這次改動而非恆綠
+    - dashboard.py 內已無 app_activated 的功能性參照（僅剩一行註解說明原因）
 
 deliberately_not_done:
   - HSF-001 與 FIH-001 的 enrolled_at 未回填。影響收案時刻的精確度，
     不影響任何分析端點；回填會再動一次 pii_patients，留待 PI 決定
   - HSF-003/004/005 的對照表 M 欄「收案狀態」仍為空（前五列皆填「追蹤中」）。
     屬對照表欄位漏填，與 PII 對齊無關，未一併補
-  - app_activated 未做任何變更，dashboard.py 的讀取端亦未改
+  - app_activated 欄位本身未動（未改 DEFAULT、未 DROP），只改讀取端
+  - test_dashboard.py 未納入 CI。ci.yml 目前不裝 requests/numpy/matplotlib，
+    為一支本機維運腳本在 CI 建 Python 環境不成比例。需手動執行：
+    cd prototype && python3 -m unittest discover -s scripts -p 'test_*.py'
+  - dashboard.py 的 module 層副作用（_load_key 的 SystemExit、OUTPUT_DIR.mkdir）
+    未重構。測試改以 import 前設環境變數繞過，避免把改動擴散到本次範圍之外
   - 未清理 transcript 與 claude-mem 中的識別資料（見 findings 5）
-  - 未調查 FIH 三筆（001/002/003）app_activated 皆為 false 與 FIH-001
-    缺 push subscription 是否為同一個啟用流程問題

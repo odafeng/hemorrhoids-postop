@@ -171,7 +171,10 @@ def compute(data):
     m["adh"] = adh
     m["avg_adh"] = sum(a["rate"] for a in adh)/len(adh) if adh else 0
 
-    activated = sum(1 for p in patients if p.get("app_activated"))
+    # patients.app_activated 從未被任何程式寫入，恆為 false（2026-08-12 決議不使用）。
+    # 啟用改以「至少回報過一次症狀」認定。
+    m["activated"] = {r.get("study_id") for r in reports}
+    activated = sum(1 for p in patients if p.get("study_id") in m["activated"])
     m["act_rate"] = activated/n if n else 0
     m["pod7_ok"] = sum(1 for a in adh if sum(1 for r in reports if r.get("study_id")==a["sid"] and (r.get("pod") or 99)<=7)>=5)
 
@@ -371,7 +374,7 @@ def gen_html(m):
 
     ptrows = ""
     for p in m["patients"]:
-        act = "✅" if p.get("app_activated") else "❌"
+        act = "✅" if p.get("study_id") in m["activated"] else "❌"
         ptrows += f'''<tr><td class="tc">{p.get("study_id","—")}</td>
         <td>{p.get("age") or "—"}</td><td>{p.get("sex") or "—"}</td>
         <td>{p.get("surgery_type") or "—"}</td><td>{p.get("surgery_date","—")}</td>
