@@ -1,0 +1,168 @@
+date: 2026-08-28
+weekday: 五
+phase: 收案執行
+day: 37        # 自 2026-07-23 首例收案起算
+objective: >
+  起點是 PI 的一句盤點：「對照表還有哪些人的 PII 還沒對齊？」問題本身預設缺口在
+  對照表裡面，查完發現方向相反——對照表上的八列全部對齊，缺的是兩位連對照表都
+  還沒登錄的新收案。補登過程另外撞出 Excel 樣式的一個 parity 陷阱，
+  以及 CLAUDE.md 現行寫法涵蓋不到的一段。
+
+# 註：本檔位於公開 repo，只記錄機制層級資訊。
+# 受試者姓名、病歷號、聯絡方式與加密金鑰一律不寫入，僅以 Study ID 指涉。
+
+trigger:
+  summary: >
+    PI 詢問收案對照表中哪些受試者的 PII 尚未與 pii_patients 對齊。
+  event_time: 2026-08-27T17:15:00Z   # 台灣時間 2026-08-28 01:15
+
+findings:
+  - id: 1
+    severity: medium
+    issue: 缺口不在對照表內部，而是兩位個案完全沒進入任何一份人工紀錄
+    detail: >
+      收案對照表第 6–13 列共八筆（HSF-001~005、WCC-001/002、FIH-001），
+      逐筆在 pii_patients 都有對應列，四個加密欄位的密文長度反推明文位元組數
+      與對照表欄位內容一致。缺的是 FIH-002 與 FIH-003：App 註冊流程已自行建立
+      patients 列（created_at 分別為 2026-08-26T11:28Z、2026-08-27T14:08Z），
+      但對照表停在序號 8，pii_patients 也只有八筆。
+      pii_patients 無孤兒列（沒有 patients 對不到的 study_id）。
+    consequence: >
+      FIH-002 延遲 2 天、FIH-003 延遲 1 天。兩者皆已進入追蹤期，
+      若期間需要聯絡受試者，兩份能還原身分的紀錄都查不到人。
+      這正是 CLAUDE.md「兩者不會互相提醒，也不會有人報錯」描述的模式，
+      只是這次連對照表那一端也沒有被打開過——2026-08-12 的
+      lesson_zone_a 說「真正在運作的是那份 Excel 對照表，因為每收一位就得打開它一次」，
+      這個前提在收案者不是 PI 本人時不成立。三位缺口個案全部是 FIH 收的。
+
+  - id: 2
+    severity: low
+    issue: 空白列 14–55 是隔列上色，樣式複製必須涵蓋整列 A–N
+    detail: >
+      待填區奇數列（15、17…55）填色 FFF2F7FB，偶數列（14、16…54）無填色，
+      兩者在全部 14 欄的 style id 都不同。已填資料列 10–13 樣式完全一致且無填色，
+      表示一列從「待填」轉為「資料」時是整列換掉 banding。
+      因此新增列必須對 A–N 全欄複製前一資料列的 _style，
+      只複製有值的欄位會讓 J/K/L/N 等空欄殘留 banding。
+    consequence: >
+      CLAUDE.md 現行寫法「設完 .value 要再 copy() 前一列的 _style」方向正確，
+      但沒有提到 parity，也容易被讀成「只需處理有寫值的欄位」。
+      本次第 15 列若只複製有值欄位，會在 J/K/L/N 留下藍底。
+
+  - id: 3
+    severity: low
+    issue: pii_patients.mrn_enc 是 NOT NULL，phone_enc 才可為空
+    detail: >
+      pii_patients 僅 phone_enc 與 national_id_enc 允許 NULL。
+      WCC-002 的 phone_enc 為 NULL 與對照表 H 欄「未取得」一致，不是漏填。
+      病歷號缺漏則會在 INSERT 當下被 schema 擋下，不會靜默寫入半筆。
+    consequence: >
+      補登流程若缺病歷號，是硬阻斷而非需要事後對帳的軟缺口。這一欄不必列入核對清單。
+
+  - id: 4
+    severity: info
+    issue: 本機無 openpyxl，系統 Python 為 PEP 668 externally-managed
+    detail: >
+      python3.14（homebrew）與 python3.11 皆無 openpyxl，
+      `pip install` 被 externally-managed-environment 擋下。
+      改在 scratchpad 建 venv 安裝 openpyxl 3.1.5，不污染使用者環境。
+    consequence: >
+      對照表的讀取可用 stdlib zipfile + ElementTree 完成（本次盤點階段即如此），
+      但寫入要保留樣式與資料驗證，實務上仍需 openpyxl。
+      下次維護對照表前先確認這個 venv 是否還在（scratchpad 會隨 session 清掉）。
+
+  - id: 5
+    severity: medium
+    issue: 受試者識別資料進入了 Claude Code 的 transcript 與 claude-mem observation DB
+    detail: >
+      本次補登所需的姓名、出生日期、聯絡電話、病歷號由 PI 直接貼入對話，
+      而非放在本機暫存檔後讀取即刪（2026-08-14 用的做法）。
+      落點為 ~/.claude/projects/ 下的 transcript，以及 claude-mem 的 observation 資料庫。
+      兩者皆在本機、不在 repo，未觸及公開 repo 的硬性限制。
+    consequence: >
+      多出一份非預期的留存副本，且 claude-mem 的內容會被後續 session 讀回。
+      待決：是否清理本次 transcript 與對應 observation。
+
+  - id: 6
+    severity: info
+    issue: patients.app_activated 的處置尚未收斂
+    detail: >
+      PI 提出「要嘛拿掉，要嘛預設都 True」。現況為 NOT NULL DEFAULT FALSE，
+      codebase 無任何寫入處，十筆全為 false。
+      讀取端只有 prototype/scripts/dashboard.py:174 與 :374（本機維運腳本，非 production）。
+      2026-08-12 已記錄「PI 已決定不使用，啟用率改以首次回報計」，
+      但 dashboard.py 至今仍讀這個欄位。
+    consequence: >
+      改 DEFAULT 為 TRUE 會把「沒有資料」偽裝成「是」，方向與 lesson_zone_a
+      指出的問題相同，只是把假陰性換成假陽性；DROP COLUMN 屬收案期間的
+      production schema 變更。兩者都不必動就能解決讀取端。
+
+hypotheses_ruled_out:
+  - hypothesis: 對照表裡有受試者的 PII 尚未寫入 pii_patients
+    disproved_by: >
+      對照表八列逐筆比對 pii_patients 皆有對應，且四個加密欄位的密文長度
+      減 66 bytes overhead 反推的明文位元組數與對照表內容一一相符
+      （姓名 9 bytes = 3 中文字；病歷號 7 或 8 bytes 與實際位數相同；
+      電話 10 bytes 表示已去除破折號；出生日期 10 bytes = YYYY-MM-DD）。
+      缺口全部落在對照表本身沒有的兩列。
+
+  - hypothesis: WCC-002 的 phone_enc 為 NULL 是漏填
+    disproved_by: 對照表 H 欄記載「未取得」，兩邊一致；且 phone_enc 允許 NULL。
+
+  - hypothesis: 依 CLAUDE.md 複製「前一列」樣式即可，且只需處理有寫值的欄位
+    disproved_by: >
+      第 15 列（奇數，待填區有 banding）與第 13 列在全部 14 欄的 style id 都不同，
+      不只 C/D/H。只複製有值欄位會讓 J/K/L/N 留下 FFF2F7FB 底色。
+
+  - hypothesis: 收案日期可從手術日期減一天推得
+    disproved_by: >
+      本次兩筆確實成立，但這是巧合而非規則。正確來源是 patients.created_at
+      轉台灣時間取日期，本次兩筆分別為 2026-08-26 與 2026-08-27，與 created_at 相符。
+
+decisions:
+  - id: D1
+    decision: FIH-002、FIH-003 立即補登，不等下一次收案批次
+    rationale: >
+      兩者已在追蹤期內，聯絡管道的還原能力不應有空窗。
+  - id: D2
+    decision: enrolled_at 一律取 patients.created_at，不用 now()
+    rationale: >
+      沿用 2026-08-14 的做法，記到的是收案時刻而非補登時刻。
+      現況十筆中 HSF-001 與 FIH-001 的 enrolled_at 與 created_at 不符
+      （分別差 1h49m 與 8h26m），係 Vault 流程之前補登所致，本次未回填。
+  - id: D3
+    decision: 本次不動 production schema，app_activated 維持原狀
+    rationale: >
+      收案期間的硬性限制。且讀取端只有本機腳本，改讀取端即可，不需 DDL。
+  - id: D4
+    decision: 對照表新增列一律整列 A–N 複製前一資料列的 _style
+    rationale: 見 findings 2，parity 使得部分複製會殘留 banding。
+
+verification:
+  scope: >
+    只驗證兩筆新列的寫入正確性與既有八筆的持續一致性，未重新驗證加密金鑰本身，
+    亦未解密任何欄位回傳明文。
+  checks:
+    - 備份 收案對照表.bak-20260828.xlsx 已建立，git check-ignore 命中
+      .gitignore:38（收案文件/收案對照表*.xlsx）
+    - 第 14、15 列 B/C/D/E/F/G/H/I/M 九欄皆有值，J/K/L/N 留空（回診日期待填）
+    - 第 14、15 列 A–N 全欄 style id 與第 13 列相同；字型 Noto Sans TC、置中、
+      填色 00000000（banding 已移除）；E/F/I 數值格式 yyyy-mm-dd
+    - 下拉清單 G6:G55 與 M6:M55 已涵蓋第 14、15 列，未調整 dv.sqref
+    - INSERT 於 DO 區塊內執行，先 set_config('app.access_reason', ..., true)
+      再寫入，金鑰取自 vault.decrypted_secrets 且未離開資料庫
+    - 補登後全部十筆（排除 TEST-001）has_pii 皆為 true；
+      新增兩筆 name 9 bytes、mrn 8 bytes、phone 10 bytes、birth_date 10 bytes，
+      與來源格式相符；enrolled_at = patients.created_at 為 true
+    - patients.surgery_date（2026-08-27、2026-08-28）與對照表 F 欄一致，
+      consent_date 取自 patients.consent_date 轉台灣時間
+
+deliberately_not_done:
+  - HSF-001 與 FIH-001 的 enrolled_at 未回填。影響收案時刻的精確度，
+    不影響任何分析端點；回填會再動一次 pii_patients，留待 PI 決定
+  - HSF-003/004/005 的對照表 M 欄「收案狀態」仍為空（前五列皆填「追蹤中」）。
+    屬對照表欄位漏填，與 PII 對齊無關，未一併補
+  - app_activated 未做任何變更，dashboard.py 的讀取端亦未改
+  - 未清理 transcript 與 claude-mem 中的識別資料（見 findings 5）
+  - 未調查 FIH 三筆（001/002/003）app_activated 皆為 false 與 FIH-001
+    缺 push subscription 是否為同一個啟用流程問題
