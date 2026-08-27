@@ -1,4 +1,4 @@
-name: Daily Adherence Check
+name: Daily Cron — Adherence Check & Follow-up Close-out
 
 on:
   schedule:
@@ -15,6 +15,21 @@ jobs:
         run: |
           curl -X POST \
             "${{ secrets.SUPABASE_URL }}/functions/v1/check-adherence" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --fail-with-body \
+            -w "\nHTTP %{http_code}\n"
+
+  # Separate job, not a step: a failed close-out must not read as a failed adherence
+  # check, and neither should stop the other from running. Closing is idempotent, so
+  # firing on both schedules costs nothing.
+  close-followup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close subjects whose follow-up has ended
+        run: |
+          curl -X POST \
+            "${{ secrets.SUPABASE_URL }}/functions/v1/close-followup" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json" \
             --fail-with-body \
