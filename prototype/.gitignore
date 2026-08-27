@@ -36,3 +36,6 @@ playwright-report/
 
 # Coverage
 coverage/
+
+# Python (scripts/)
+__pycache__/
