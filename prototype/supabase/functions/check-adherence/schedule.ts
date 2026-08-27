@@ -7,6 +7,8 @@
 // (第一週每日、第二週每兩日一次、第三週起每週一次) and nagged them on days they were
 // never asked to report.
 
+import { podFor } from "../_shared/followup.ts";
+
 export interface PatientRow {
   study_id: string;
   surgery_date: string;
@@ -15,15 +17,6 @@ export interface PatientRow {
 export interface DuePatient {
   study_id: string;
   pod: number;
-}
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** Post-operative day for `today`, both dates as YYYY-MM-DD. */
-export function podFor(surgeryDate: string, today: string): number {
-  const surgery = Date.parse(`${surgeryDate}T00:00:00Z`);
-  const now = Date.parse(`${today}T00:00:00Z`);
-  return Math.floor((now - surgery) / DAY_MS);
 }
 
 export function patientsDueForReminder(
