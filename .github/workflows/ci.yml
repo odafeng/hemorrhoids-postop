@@ -222,7 +222,7 @@ jobs:
           # Gateway-verified JWT (function ALSO verifies internally)
           supabase functions deploy patient-onboard --project-ref "$PROJECT_REF"
           # Self-authenticating: each validates the caller itself, or is public
-          for fn in ai-chat check-adherence health admin-reset-password \
+          for fn in ai-chat check-adherence close-followup health admin-reset-password \
                     researcher-invite researcher-manage send-test-push; do
             supabase functions deploy "$fn" --project-ref "$PROJECT_REF" --no-verify-jwt
           done
