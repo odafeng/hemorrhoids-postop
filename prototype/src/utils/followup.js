@@ -54,3 +54,23 @@ export function closeOutState(studyStatus, pod, surgeryDate) {
   if (daysLeft <= CLOSE_WARNING_DAYS) return at('closing', daysLeft);
   return at('active', daysLeft);
 }
+
+/**
+ * How a close-out state reads in the cohort list. `null` means show nothing —
+ * a subject in the middle of follow-up is the unremarkable case and does not
+ * need a badge competing with the alert and adherence chips beside it.
+ *
+ * `tone` is a CSS custom-property name that index.css already defines.
+ *
+ * @returns {{text: string, tone: string}|null}
+ */
+export function closeOutBadge(state) {
+  switch (state?.kind) {
+    case 'closing': return { text: `結案剩 ${state.daysLeft} 天`, tone: 'warn' };
+    case 'due': return { text: '今天到期', tone: 'warn' };
+    case 'overdue': return { text: `逾期 ${-state.daysLeft} 天未結案`, tone: 'danger' };
+    case 'closed': return { text: '已結案', tone: 'ok' };
+    case 'withdrawn': return { text: '已退出', tone: 'ink-3' };
+    default: return null;
+  }
+}
