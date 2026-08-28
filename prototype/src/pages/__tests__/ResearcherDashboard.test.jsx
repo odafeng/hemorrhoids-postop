@@ -249,3 +249,73 @@ describe('ResearcherDashboard — 統計數字排除測試帳號', () => {
     expect(await screen.findByText('TEST-001')).toBeInTheDocument();
   });
 });
+
+describe('ResearcherDashboard — 已確認的警示收合', () => {
+  // 11 則警示、全部已確認，是 2026-08-29 production 的實際狀態。攤開來就是
+  // 一整頁已解決的卡片，而且只會隨收案數成長。
+  const alert = (id, acknowledged) => ({
+    id, study_id: 'HSF-002', alert_type: 'pain_high', alert_level: 'warning',
+    message: `警示 ${id}`, triggered_at: '2026-08-27T10:00:00Z', acknowledged,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sb.getAllPatients.mockResolvedValue([
+      { study_id: 'HSF-002', surgeon_id: 'HSF', study_status: 'active', surgery_date: '2026-08-08' },
+    ]);
+    sb.getAdherenceSummary.mockResolvedValue([]);
+    sb.getUnreviewedChats.mockResolvedValue([]);
+    sb.getAllReportsForResearcher.mockResolvedValue([]);
+    sb.listStudyInvites.mockResolvedValue([]);
+    sb.listResearchers.mockResolvedValue([]);
+  });
+
+  const renderDashboard = () => {
+    const client = createTestQueryClient();
+    return render(
+      <MemoryRouter initialEntries={['/researcher']}>
+        <QueryClientProvider client={client}>
+          <ResearcherDashboard onNavigate={() => {}} isDemo={false} userInfo={{ role: 'pi' }} onLogout={() => {}} />
+        </QueryClientProvider>
+      </MemoryRouter>
+    );
+  };
+
+  it('已確認的警示預設不渲染，只留一行收合開關', async () => {
+    sb.getAllAlertsForResearcher.mockResolvedValue([alert('a1', true), alert('a2', true)]);
+    renderDashboard();
+    expect(await screen.findByRole('button', { name: /展開已確認 2 則/ })).toBeInTheDocument();
+    // 條件渲染而非 <details>：收合時元素真的不在 DOM 裡，jsdom 分辨得出來。
+    expect(screen.queryByText('警示 a1')).not.toBeInTheDocument();
+    expect(screen.queryByText('警示 a2')).not.toBeInTheDocument();
+  });
+
+  it('點開之後已確認的才出現，再點收回去', async () => {
+    sb.getAllAlertsForResearcher.mockResolvedValue([alert('a1', true)]);
+    renderDashboard();
+    const toggle = await screen.findByRole('button', { name: /展開已確認 1 則/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(toggle);
+    expect(await screen.findByText('警示 a1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /收合已確認 1 則/ })).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: /收合已確認 1 則/ }));
+    expect(screen.queryByText('警示 a1')).not.toBeInTheDocument();
+  });
+
+  it('未確認的一律展開，不受收合開關影響', async () => {
+    sb.getAllAlertsForResearcher.mockResolvedValue([alert('new', false), alert('old', true)]);
+    renderDashboard();
+    expect(await screen.findByText('警示 new')).toBeInTheDocument();
+    expect(screen.queryByText('警示 old')).not.toBeInTheDocument();
+    expect(screen.getByText(/1 UNACKED/)).toBeInTheDocument();
+  });
+
+  it('沒有已確認的警示時不出現收合開關', async () => {
+    sb.getAllAlertsForResearcher.mockResolvedValue([alert('new', false)]);
+    renderDashboard();
+    await screen.findByText('警示 new');
+    expect(screen.queryByRole('button', { name: /已確認/ })).not.toBeInTheDocument();
+  });
+});
