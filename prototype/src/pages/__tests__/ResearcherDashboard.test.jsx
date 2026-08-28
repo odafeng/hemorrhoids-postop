@@ -209,6 +209,32 @@ describe('ResearcherDashboard — 統計數字排除測試帳號', () => {
     expect(statValue('ENROLLED')).toBe('4');
   });
 
+  it('ENROLLED 是累計收案，結案不會讓它往下掉', async () => {
+    // 結案機制上線前 study_status 只有 'active'，這個數字放累計或放在追蹤中
+    // 完全看不出差別。收滿 50 例並全部追蹤完成時，舊寫法會顯示 0。
+    sb.getAllPatients.mockResolvedValue([
+      { study_id: 'HSF-001', surgeon_id: 'HSF', study_status: 'completed', surgery_date: '2026-07-24' },
+      { study_id: 'HSF-002', surgeon_id: 'HSF', study_status: 'active', surgery_date: '2026-08-08' },
+      { study_id: 'WCC-001', surgeon_id: 'WCC', study_status: 'withdrawn', surgery_date: '2026-08-05' },
+      { study_id: 'TEST-001', surgeon_id: 'TEST', study_status: 'active', surgery_date: '2026-07-18' },
+    ]);
+    renderDashboard();
+    await screen.findByText('HSF-001');
+    expect(statValue('ENROLLED')).toBe('3');
+  });
+
+  it('ENROLLED 的小字報出目標與仍在追蹤的人數', async () => {
+    sb.getAllPatients.mockResolvedValue([
+      { study_id: 'HSF-001', surgeon_id: 'HSF', study_status: 'completed', surgery_date: '2026-07-24' },
+      { study_id: 'HSF-002', surgeon_id: 'HSF', study_status: 'active', surgery_date: '2026-08-08' },
+    ]);
+    renderDashboard();
+    await screen.findByText('HSF-001');
+    const foot = screen.getByText('ENROLLED').closest('.stat-card').querySelector('.stat-foot');
+    expect(foot.textContent).toContain('50');
+    expect(foot.textContent).toContain('追蹤中 1');
+  });
+
   it('ADHERENCE 不把 TEST-001 的 0% 算進分母', async () => {
     renderDashboard();
     await screen.findByText('HSF-001');

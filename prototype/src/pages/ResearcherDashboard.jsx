@@ -21,6 +21,9 @@ const getSurgeonId = (p) => p.surgeon_id || (p.study_id?.includes('-') ? p.study
 const NON_SUBJECT_STUDY_IDS = new Set(['TEST-001']);
 const isStudySubject = (row) => !NON_SUBJECT_STUDY_IDS.has(row.study_id);
 
+// IRB Ver 2 (2026.04.14) 的收案目標。
+const ENROLMENT_TARGET = 50;
+
 export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLogout }) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -366,8 +369,13 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
       <div className="stat-grid">
         <div className="stat-card">
           <div className="stat-lbl">ENROLLED</div>
-          <div className="stat-val">{activePatients}</div>
-          <div className="stat-foot">of {studyPatients.length || 40} total</div>
+          {/* 累計收案，不是「目前仍在追蹤」。結案上線前兩者永遠相等，所以這裡
+              原本放 activePatients 也看不出問題；現在受試者一結案，招募進度的
+              數字就會往下掉，收滿並全部追蹤完成時會顯示 0。 */}
+          <div className="stat-val">{studyPatients.length}</div>
+          <div className="stat-foot">
+            of {ENROLMENT_TARGET} 目標 · 追蹤中 {activePatients}
+          </div>
         </div>
         <div className="stat-card">
           <div className="stat-lbl">ADHERENCE</div>
