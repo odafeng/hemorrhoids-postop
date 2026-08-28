@@ -374,7 +374,8 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
               數字就會往下掉，收滿並全部追蹤完成時會顯示 0。 */}
           <div className="stat-val">{studyPatients.length}</div>
           <div className="stat-foot">
-            of {ENROLMENT_TARGET} 目標 · 追蹤中 {activePatients}
+            <span className="stat-foot-seg">目標 {ENROLMENT_TARGET} ·</span>{' '}
+            <span className="stat-foot-seg">追蹤中 {activePatients}</span>
           </div>
         </div>
         <div className="stat-card">
@@ -389,8 +390,10 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
           <div className="stat-val">{closedCount}</div>
           <div className={`stat-foot ${overdueCount > 0 ? 'danger' : closingCount > 0 ? 'warn' : 'ok'}`}>
             {overdueCount > 0
-              ? `${overdueCount} 人逾期未結案`
-              : closingCount > 0 ? `${closingCount} 人一週內到期` : '無待結案'}
+              ? <><span className="stat-foot-seg">{overdueCount} 人</span>逾期未結案</>
+              : closingCount > 0
+                ? <><span className="stat-foot-seg">{closingCount} 人</span>一週內到期</>
+                : '無待結案'}
           </div>
         </div>
         <div className="stat-card" data-tone={activeAlerts > 0 ? 'danger' : null}>

@@ -487,6 +487,10 @@ body {
   margin-top: 6px;
   font-family: var(--font-mono);
 }
+/* 卡片在手機上只有半個視窗寬，最長的那句會換行。斷行要落在分隔點上，
+   不能把數字從它的標籤上扯下來單獨成行。
+   名稱不用 .seg——那是上面的 segmented control，套下去會帶進 flex 與邊框。 */
+.stat-foot-seg { white-space: nowrap; }
 .stat-foot.ok { color: var(--ok); }
 .stat-foot.warn { color: var(--warn); }
 .stat-foot.danger { color: var(--danger); }
