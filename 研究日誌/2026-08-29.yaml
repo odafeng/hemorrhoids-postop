@@ -6,6 +6,9 @@ objective: >
   接續前一日的 ENROLLED 修正。PI 回報「RWD 太醜，追蹤中 10 的那個 10 自己跳行」。
   修的過程比結果值得記：第一版換了一個已經被佔用的 class 名稱，把小字撐成三倍高，
   而 450 個單元測試全程是綠的。
+  同一夜稍後 PI 再問「confirm 完的 alerts 可以不要一直累積在前端嗎」，
+  查出 11 則警示全部已確認卻全部攤開。修這一項時，早上那條教訓第一次被
+  主動套用而不是事後補救。
 
 # 註：本檔位於公開 repo，只記錄機制層級資訊。
 # 受試者姓名、病歷號、聯絡方式與加密金鑰一律不寫入，僅以 Study ID 指涉。
@@ -66,6 +69,20 @@ findings:
       修正同時處理了兩者：文案縮短使 375px 回到一行，
       nowrap 片段使 320px 的斷點落在分隔符號上而非詞中間。
 
+  - id: 5
+    severity: medium
+    issue: 11 則警示全部已確認，卻與未處理事項用相同視覺重量全部攤開
+    detail: >
+      alerts 表中非 TEST 的資料共 11 列，acknowledged 全為 true
+      （2026-07-25 至 2026-08-27，未確認 0 則）。
+      getAllAlertsForResearcher() 不帶任何篩選，ResearcherDashboard 以
+      alerts.map() 將每一則渲染成完整的 alert-banner。
+      區塊標題為 ALERT HISTORY，所以保留歷史是刻意的設計。
+    consequence: >
+      這不是「累積了一些」，而是整個列表沒有任何一則是待辦。
+      在這種狀態下仍用未處理事項的視覺重量呈現，等於該區塊完全失去訊號功能——
+      看到一片橘色卡片不代表有事要做。且筆數只會隨收案數單調成長。
+
 hypotheses_ruled_out:
   - hypothesis: "加上 white-space: nowrap 就能修好，不必動文案"
     disproved_by: >
@@ -98,6 +115,21 @@ decisions:
       單欄會讓四張卡佔滿整個首屏，把 cohort 列表推到摺線以下。
       本次問題只需縮短一句文案即可解決，不值得改動全域佈局。
 
+  - id: D3
+    decision: 已確認的警示收合成一行開關，未確認的照舊完整展開在最上面
+    rationale: >
+      不刪資料、不改 query，旁邊的「警示紀錄」CSV 匯出仍是完整紀錄。
+      收合那行刻意做得比 alert-banner 輕（虛線、無填色）：
+      它要傳達的是「這裡還有東西但不用你動」。
+
+  - id: D4
+    decision: 用 component state 加條件渲染，不用 details 元素
+    rationale: >
+      details 的程式碼更少，但 jsdom 不實作它的收合行為——內容仍在 DOM 裡，
+      測試分不出展開與收合。條件渲染讓收合時元素真的不存在，jsdom 量得到。
+      這是本日 findings 3 那條教訓第一次被主動套用：
+      在動手前先選一個測試工具量得到的實作方式，而不是事後才發現測不到。
+
 verification:
   scope: >
     只驗證四張統計卡的小字換行行為與線上部署，未觸及任何資料或後端。
@@ -114,6 +146,17 @@ verification:
       移除的「目標 · 追蹤中」與「of 50」皆歸零。本次移除字串為完整中文，
       grep 得到，補上了前一日只能單向驗證的缺口
     - main CI 四個 job 全綠，bundle hash dlSF-5j0
+    - 警示收合：lint 乾淨、454 測試通過（原 450）、build 成功。
+      四個新測試涵蓋預設收合、展開再收回（含 aria-expanded）、
+      未確認者不受開關影響、無已確認者時不出現開關；
+      以 mutation 驗證——把已確認清單改為無條件渲染，三個轉紅
+    - 警示收合的外觀在真實瀏覽器中確認（收合那行需讀起來比警示卡輕），
+      這一點 DOM 斷言證明不了
+    - .acked-toggle 在寫下之前先 grep 過 index.css 與所有 .jsx，確認未被佔用
+    - 線上驗證同時比對 JS 與 CSS 兩個 bundle：
+      JS（CJwz4hD0）含 acked-toggle／展開／收合／已確認，
+      CSS（C1IbpG3q）含 .acked-toggle 規則。只驗 JS 的話，
+      class 名稱上線但樣式規則沒上線，畫面仍是錯的
 
 deliberately_not_done:
   - 未替 index.css 導入 CSS Modules 或任何 scoping。撞名風險仍在，
@@ -121,3 +164,7 @@ deliberately_not_done:
   - 未加入任何視覺回歸測試（screenshot diff）。本次是人工量測行框數，
     下次同類改動仍需重做一次
   - 未檢查其他頁面是否有同型的窄螢幕換行問題，只修了研究者儀表板的統計卡
+  - 未對 getAllAlertsForResearcher() 加上筆數上限或時間範圍。目前 11 列無效能疑慮，
+    但該查詢會隨收案數持續成長
+  - 未處理已確認警示的長期歸檔（例如超過 N 天後只留在 CSV）。
+    本次只改呈現，資料一列未動

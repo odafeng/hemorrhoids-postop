@@ -931,7 +931,13 @@
         "斷言用的是 textContent / toBeInTheDocument，但改動的是 class、樣式或版面",
         "一個改動「不可能影響測試」，而測試也確實沒變——要先確認那是因為沒影響，還是因為測不到"
       ],
-      "used_on": null,
+      "used_on": [
+        {
+          "date": "2026-08-29",
+          "what": "同夜稍後做「已確認警示收合」時，在動手前選實作方式：details 元素程式碼更少，但 jsdom 不實作它的收合，內容仍留在 DOM 裡，測試分不出展開與收合",
+          "outcome": "改用 component state 加條件渲染，收合時元素真的不存在。四個測試涵蓋收合、展開、aria-expanded 與邊界，mutation 驗證三個轉紅。這是本則第一次被主動套用而非事後補救——教訓寫下與再次適用之間只隔了約一小時"
+        }
+      ],
       "related": {
         "lessons": [
           "LL-2026-08-28-02"
@@ -968,7 +974,13 @@
         "想用一個兩三個字母的通用 class 名稱",
         "樣式套上去之後元素多了預期外的邊框、間距或 display 行為"
       ],
-      "used_on": null,
+      "used_on": [
+        {
+          "date": "2026-08-29",
+          "what": "新增 .acked-toggle 前先 grep index.css 與所有 .jsx",
+          "outcome": "確認未被佔用（css 0、jsx 0）才寫下。相對於同日稍早 .seg 撞名後才發現，這次成本是一次 grep"
+        }
+      ],
       "related": {
         "lessons": [
           "LL-2026-08-29-01"
