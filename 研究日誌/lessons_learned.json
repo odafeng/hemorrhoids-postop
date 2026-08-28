@@ -901,6 +901,82 @@
         ]
       },
       "retrospective_note": "同日稍晚出現第四個實例，而且是下游型的：研究者儀表板的 ENROLLED 卡片，標籤寫「收案」數字卻取 activePatients。結案機制上線前 study_status 只有 active 一種值，兩者永遠相等，所以標籤錯了也沒有任何畫面差異；HSF-001 一結案就顯示成「10 of 11」，而且會隨受試者陸續完成一路往下掉，收滿並全部追蹤完成時顯示 0。推論：欄位沒有寫入端時，不只欄位本身在說謊，依賴它的顯示邏輯與測試也一併失去鑑別力——既有的「ENROLLED 不計入 TEST-001」測試 fixture 全為 active，從來分辨不出「累計收案」與「仍在追蹤」這兩種讀法。所以盤點帶 DEFAULT 的欄位時，要一併看它的讀取端與那些讀取端的測試 fixture 是否只覆蓋單一狀態。"
+    },
+    {
+      "id": "LL-2026-08-29-01",
+      "title": "綠燈只在測試工具的能力邊界之內有意義，而工具不會告訴你邊界在哪",
+      "date_learned": "2026-08-29",
+      "status": "resolved",
+      "severity": "medium",
+      "domains": [
+        "testing",
+        "frontend",
+        "ci"
+      ],
+      "context": "修研究者儀表板統計卡的窄螢幕換行時，第一版把 helper class 命名為 .seg，與 index.css 既有的 segmented control 元件撞名。",
+      "symptom": "小字的 span 繼承了 display:flex、邊框、內距與 18px 下邊距，高度由 18px 變成 71px。整段期間 450 個單元測試全數通過。",
+      "root_cause": {
+        "statement": "vitest 跑在 jsdom，沒有排版引擎：不計算行框、getBoundingClientRect 一律回傳 0、不套用 CSS 的視覺屬性。ResearcherDashboard.test.jsx 斷言的是 textContent，而撞名前後 textContent 完全相同。測試不是寫得不好，是這一類問題根本落在它量得到的範圍之外。"
+      },
+      "resolution": {
+        "approach": "把 markup 連同真實 index.css 放進瀏覽器，量測 .stat-foot 的行框數，並以 Range 逐字定位斷行點。改名為 .stat-foot-seg。",
+        "cost": "需要起一個本機 HTTP server（擴充套件擋 file:// URL）與一次瀏覽器往返"
+      },
+      "principle": {
+        "statement": "在說「測試通過所以沒問題」之前，先問這套工具量不量得到我剛才改的那個維度。jsdom 量不到排版，textContent 斷言量不到樣式，單一狀態的 fixture 量不到狀態機。工具在能力邊界外不會報錯，它會回傳綠燈——那個綠燈的資訊量是零，卻長得跟真的一樣。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "改動的是視覺或排版，而驗證只跑了 jsdom 下的單元測試",
+        "斷言用的是 textContent / toBeInTheDocument，但改動的是 class、樣式或版面",
+        "一個改動「不可能影響測試」，而測試也確實沒變——要先確認那是因為沒影響，還是因為測不到"
+      ],
+      "used_on": null,
+      "related": {
+        "lessons": [
+          "LL-2026-08-28-02"
+        ],
+        "journal": [
+          "2026-08-29.yaml#findings-3"
+        ]
+      }
+    },
+    {
+      "id": "LL-2026-08-29-02",
+      "title": "index.css 是一個沒有 scoping 的全域大檔，新增 class 前先 grep",
+      "date_learned": "2026-08-29",
+      "status": "partially_resolved",
+      "severity": "low",
+      "domains": [
+        "frontend",
+        "css"
+      ],
+      "context": "專案的樣式全部集中在 src/index.css，沒有 CSS Modules、沒有 styled-components、沒有任何 scoping 機制。",
+      "symptom": "新增的 utility class .seg 撞上既有的 segmented control 元件（index.css 4 處、.jsx 7 處），意外繼承整組視覺屬性。",
+      "root_cause": {
+        "statement": "短而通用的名稱（seg、row、box、tag、chip）在全域命名空間裡碰撞機率很高，而 CSS 的碰撞是靜默的——不會有編譯錯誤或警告，只會多套一組屬性上去。"
+      },
+      "resolution": {
+        "approach": "改用帶元件前綴的名稱 .stat-foot-seg。新增前以 grep 同時掃 index.css 與所有 .jsx。",
+        "cost": "名稱較長"
+      },
+      "principle": {
+        "statement": "沒有 scoping 的樣式檔裡，class 名稱等同全域變數。取名要帶所屬元件的前綴，而且要在寫下之前先 grep，不是在出問題之後。",
+        "scope": "project"
+      },
+      "recurrence_signals": [
+        "想用一個兩三個字母的通用 class 名稱",
+        "樣式套上去之後元素多了預期外的邊框、間距或 display 行為"
+      ],
+      "used_on": null,
+      "related": {
+        "lessons": [
+          "LL-2026-08-29-01"
+        ],
+        "journal": [
+          "2026-08-29.yaml#findings-2"
+        ]
+      }
     }
   ],
   "open_items": [

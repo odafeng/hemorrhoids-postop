@@ -1,0 +1,123 @@
+date: 2026-08-29
+weekday: 六
+phase: 收案執行
+day: 38        # 自 2026-07-23 首例收案起算
+objective: >
+  接續前一日的 ENROLLED 修正。PI 回報「RWD 太醜，追蹤中 10 的那個 10 自己跳行」。
+  修的過程比結果值得記：第一版換了一個已經被佔用的 class 名稱，把小字撐成三倍高，
+  而 450 個單元測試全程是綠的。
+
+# 註：本檔位於公開 repo，只記錄機制層級資訊。
+# 受試者姓名、病歷號、聯絡方式與加密金鑰一律不寫入，僅以 Study ID 指涉。
+
+trigger:
+  summary: >
+    PI 在手機上看到 ENROLLED 卡片的小字換行，數字 10 單獨落在第二行。
+  event_time: 2026-08-28T17:53:00Z   # 台灣時間 2026-08-29 01:53
+
+findings:
+  - id: 1
+    severity: low
+    issue: .stat-grid 在所有寬度都是 1fr 1fr，沒有任何 media query
+    detail: >
+      index.css 的 .stat-grid 固定兩欄，全檔沒有任何 media query 動它。
+      手機上每張卡約半個視窗寬；375px 時卡片內文寬僅 137px。
+      前一日新增的「of 50 目標 · 追蹤中 10」是四張卡裡最長的一句，
+      其餘三句分別是「目標 ≥ 70%」「2 人一週內到期」「已處理」。
+    consequence: >
+      新增文案時沒有把兩欄佈局納入考量。此處不是 bug 而是設計限制，
+      但它決定了小字的可用字數大約在 12–14 個全形字元。
+
+  - id: 2
+    severity: medium
+    issue: 第一版把 helper class 命名為 .seg，與既有的 segmented control 元件撞名
+    detail: >
+      index.css 已有 `.seg { display: flex; background: var(--surface-sunk);
+      border: 1px solid var(--line); border-radius: 10px; padding: 3px;
+      margin-bottom: 18px; }` 與 `.seg button { ... }`，是分段切換元件。
+      新加的 `.stat-foot .seg { white-space: nowrap }` 沒有覆蓋掉那些屬性，
+      於是小字裡的 span 繼承了 flex、邊框、內距與 18px 下邊距，
+      高度由 18px 變成 71px。量測時顯示為「4 行」。
+      grep 確認 .seg 在 index.css 出現 4 次、在 .jsx 出現 7 次。
+    consequence: >
+      index.css 是單一大檔、沒有任何 scoping 或 CSS Modules，
+      新增 utility class 前必須先 grep。改名為 .stat-foot-seg 後正常。
+
+  - id: 3
+    severity: medium
+    issue: 450 個單元測試在小字被撐成三倍高的整段期間全程綠燈
+    detail: >
+      vitest 跑在 jsdom，沒有排版引擎：getBoundingClientRect 一律回傳 0，
+      不計算行框，也不套用 CSS 的視覺屬性。
+      ResearcherDashboard.test.jsx 斷言的是 textContent，
+      而 textContent 在撞名前後完全相同。
+    consequence: >
+      這一類問題必須在真的瀏覽器裡看。單元測試對它零鑑別力，
+      而且不會有任何訊號指出「這件事我測不到」。
+
+  - id: 4
+    severity: info
+    issue: 320px 時舊文案的斷行點比「數字孤立」更糟
+    detail: >
+      以 Range 逐字掃出斷行位置：舊文案在 320px 的第二行從「中 10」開始，
+      也就是把「追蹤中」從詞中間劈開。PI 回報的是 375px 下數字孤立的現象，
+      更窄的裝置上實際更難看。
+    consequence: >
+      修正同時處理了兩者：文案縮短使 375px 回到一行，
+      nowrap 片段使 320px 的斷點落在分隔符號上而非詞中間。
+
+hypotheses_ruled_out:
+  - hypothesis: "加上 white-space: nowrap 就能修好，不必動文案"
+    disproved_by: >
+      320px 時卡片內文寬僅 109px，整句無論如何都放不下一行。
+      單靠 nowrap 只能改變斷點位置，不能消除換行。
+      必須同時縮短文案（拿掉英文 of）才能讓 375px 回到一行。
+
+  - hypothesis: 單元測試全綠代表這次改動沒有副作用
+    disproved_by: >
+      .seg 撞名期間小字高度從 18px 變成 71px，450 個測試無一轉紅。
+      jsdom 不做排版，斷言的又是 textContent，撞名前後字面完全相同。
+
+  - hypothesis: 用 resize_window 縮小瀏覽器視窗即可量測窄螢幕行為
+    disproved_by: >
+      工具回報 resize 成功，但頁面內 window.innerWidth 仍為 1728，
+      量到的卡片內文寬也沒有變化。改以限制容器寬度量測，
+      修正前後在同一條件下比較，結論仍成立。
+
+decisions:
+  - id: D1
+    decision: 文案縮短為「目標 50 · 追蹤中 10」，並以 .stat-foot-seg 包住每組標籤與數字
+    rationale: >
+      拿掉英文 of 即足以讓 375px 回到一行，不需要改動 .stat-grid 的兩欄佈局
+      （那會影響全部四張卡與其他頁面）。nowrap 片段是防護而非主要修法：
+      即使未來文案再變長，斷點也只會落在分隔符號上。
+
+  - id: D2
+    decision: 不為此新增 media query 讓 .stat-grid 在窄螢幕變單欄
+    rationale: >
+      單欄會讓四張卡佔滿整個首屏，把 cohort 列表推到摺線以下。
+      本次問題只需縮短一句文案即可解決，不值得改動全域佈局。
+
+verification:
+  scope: >
+    只驗證四張統計卡的小字換行行為與線上部署，未觸及任何資料或後端。
+  checks:
+    - 以真實 index.css 渲染四張卡，量測 .stat-foot 行框數：
+      320px（卡片內文 109px）修正前 2 行、修正後 2 行；
+      375px（137px）修正前 2 行、修正後 1 行；
+      414px（156px）兩者皆 1 行
+    - 以 Range 逐字定位斷行點：修正前 320px 的第二行始於「中 10」（詞中間），
+      修正後始於「追蹤中 10」（分隔符號處）
+    - grep 確認 .seg 在 index.css 4 處、.jsx 7 處後才改名為 .stat-foot-seg
+    - lint 乾淨、450 測試通過、build 成功
+    - 線上 bundle 雙向字串比對（非 hash）：新增的 stat-foot-seg 與 追蹤中 命中，
+      移除的「目標 · 追蹤中」與「of 50」皆歸零。本次移除字串為完整中文，
+      grep 得到，補上了前一日只能單向驗證的缺口
+    - main CI 四個 job 全綠，bundle hash dlSF-5j0
+
+deliberately_not_done:
+  - 未替 index.css 導入 CSS Modules 或任何 scoping。撞名風險仍在，
+    目前的防護只有「新增 class 前先 grep」這個習慣
+  - 未加入任何視覺回歸測試（screenshot diff）。本次是人工量測行框數，
+    下次同類改動仍需重做一次
+  - 未檢查其他頁面是否有同型的窄螢幕換行問題，只修了研究者儀表板的統計卡
