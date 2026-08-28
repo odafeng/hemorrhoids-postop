@@ -7,6 +7,9 @@ objective: >
   對照表裡面，查完發現方向相反——對照表上的八列全部對齊，缺的是兩位連對照表都
   還沒登錄的新收案。補登過程另外撞出 Excel 樣式的一個 parity 陷阱，
   以及 CLAUDE.md 現行寫法涵蓋不到的一段。
+  同一天往下延伸成兩件事：一是修掉 dashboard.py 讀死欄位的啟用率，二是把
+  「滿 30 天結案」做成 App 端的完整機制，分五層以 stacked PR 送出並全部上線。
+  日終再收一位新個案 HSF-006，這次在當天就補齊了兩份紀錄。
 
 # 註：本檔位於公開 repo，只記錄機制層級資訊。
 # 受試者姓名、病歷號、聯絡方式與加密金鑰一律不寫入，僅以 Study ID 指涉。
@@ -126,6 +129,42 @@ findings:
       推播端無害：patientsDueForReminder 以 reportDays 過濾，
       最大回報日 27，逾期者不會被誤推播。
 
+  - id: 9
+    severity: medium
+    issue: 分層時把 lint 修正放進發現它的那一層，使下層單獨拿出來是壞的
+    detail: >
+      L4（前端鏡像）新增的測試用 process.cwd() 讀檔比對，ESLint 的 browser env
+      沒有定義 process，該行在 L4 就違規。但修正（改用 globalThis.process）
+      是在寫 L5 時才發現並順手放進 L5 的 commit。
+      結果 PR #9 單獨跑 CI 直接紅在 lint，而 PR #10 是綠的。
+    consequence: >
+      違反「每層必須獨立正確、獨立可 revert」。修法是把修正下推到 L4 再 rebase L5，
+      並且兩層各自單獨跑完整驗證（L4 單獨 444 測試、L5 448）。
+      通則：修正要跟著「引入問題的那一層」，不是「發現問題的那一層」。
+
+  - id: 10
+    severity: low
+    issue: gh stack submit 建立的 PR 預設是 draft，且 stacked PR 不能用 gh pr merge
+    detail: >
+      四個 PR 建立後 CI 全綠，但 isDraft 皆為 true，當時沒注意。
+      隔日要合併時 gh pr merge 回報「This pull request is part of a stack and must
+      be merged using the asynchronous merge REST API」，需改用 gh stack merge；
+      而 gh stack merge 又拒絕 draft，要先 gh pr ready。
+    consequence: >
+      draft 預設其實有用——它讓「先手動實測再開排程」那道關卡多一層保險。
+      gh stack merge <PR> 的語意是「合併到該 PR 為止」，所以 merge 10 會含 #9、
+      merge 6 不會碰 #7，正好對應計畫需要的分批合併。
+
+  - id: 11
+    severity: info
+    issue: 當天新收案 HSF-006 在數小時內就被發現兩份紀錄未補
+    detail: >
+      08-28 17:19 註冊，20:14 因例行查詢 patients 而發現 active 由 9 變 10、
+      has_pii 為 false。與 FIH-002/003 延遲 1–2 天相比縮短到數小時。
+    consequence: >
+      發現機制仍是「剛好查到」，不是任何自動提示。findings 1 描述的結構沒有改變，
+      只是這次查詢頻率高。若無人查，缺口一樣不會有人報錯。
+
 hypotheses_ruled_out:
   - hypothesis: 對照表裡有受試者的 PII 尚未寫入 pii_patients
     disproved_by: >
@@ -142,6 +181,23 @@ hypotheses_ruled_out:
     disproved_by: >
       第 15 列（奇數，待填區有 banding）與第 13 列在全部 14 欄的 style id 都不同，
       不只 C/D/H。只複製有值欄位會讓 J/K/L/N 留下 FFF2F7FB 底色。
+
+  - hypothesis: gh stack 不存在，stacked PR 只能用 gh pr create --base 手動疊
+    disproved_by: >
+      對 gh 2.86.0 而言正確，但結論錯了。升級到 2.98.0 後執行 gh stack 會直接指路
+      gh extension install github/gh-stack——它是官方 extension。裝上後 init/submit/
+      merge 都可用，不需要繞。
+
+  - hypothesis: lint 與型別問題只要最終 stack 頂端是綠的就沒事
+    disproved_by: >
+      PR #9 單獨跑 CI 紅在 lint（'process' is not defined），而其上的 PR #10 是綠的
+      ——因為修正被放在 L5。stack 中每一層的 CI 是各自跑的，頂端綠不代表下層可合。
+
+  - hypothesis: 把 close-followup 加進 ci.yml 部署清單屬於 L3（排程層）
+    disproved_by: >
+      ci.yml 的部署步驟是逐一列名函式而非掃目錄。若該行留在 L3，L2 合併後
+      production 根本不會有這個函式，「先手動實測再開排程」的整個關卡設計失效。
+      該行 amend 進 L2。
 
   - hypothesis: FIH 收案的三筆 app_activated 皆為 false，可能是該收案者的啟用流程有問題
     disproved_by: >
@@ -226,6 +282,35 @@ decisions:
       結案與否是研究判斷（D28 回診是否完成、CRF 是否收齊），不是資料清理。
       逾期清單會持續提示直到 PI 自行處理。
 
+  - id: D8
+    decision: >
+      App 端結案流程分五層以 stacked PR 實作：規則模組與 ADR、Edge Function、
+      排程、前端鏡像、儀表板顯示。全部零 DDL
+    rationale: >
+      study_status 是無 CHECK constraint 的 VARCHAR(20)，寫 'completed' 不需 migration，
+      這是收案期間唯一可行的路。排程走 GitHub Actions 而非 pg_cron——
+      production 沒安裝 pg_cron（cron.job relation 不存在），
+      既有的 check-adherence 也是這樣觸發的。
+      分層依「機械性在下、需判斷在上」：規則定義 → 執行器 → 開關 → 鏡像 → UI。
+      設計決策另立 docs/adr/0001-followup-close-out-at-pod30.md（repo 第一則 ADR）。
+
+  - id: D9
+    decision: Edge Function 與排程分兩層合併，中間插入一次 production 手動實測
+    rationale: >
+      L3 是整個 stack 裡唯一會讓 production 開始自動寫入的一層。
+      分開之後 L2 合併時函式只回應帶 CRON_SECRET 的呼叫、不會自己跑，
+      可以先驗證一次再開自動化。
+      實測以 gh workflow run --ref followup/03-schedule 執行，
+      不必合併 #7 也不必取得 secret 明文（GitHub 與 Supabase 兩端都不給讀回 secret 值，
+      supabase secrets list 的 value 欄位是 SHA-256 digest）。
+      當日無人到期，所以那是一次保證不寫入、但完整跑過決策路徑的實測。
+
+  - id: D10
+    decision: HSF-006 的對照表收案狀態填「已簽同意書」而非「追蹤中」
+    rationale: >
+      其手術日為 2026-08-29，登錄當日尚未進入追蹤期。其餘各列的「追蹤中」
+      皆為術後狀態。此欄為下拉選單，PI 若要統一格式可逕行修改。
+
 verification:
   scope: >
     只驗證兩筆新列的寫入正確性與既有八筆的持續一致性，未重新驗證加密金鑰本身，
@@ -248,6 +333,25 @@ verification:
       將 compute() 還原為舊的 app_activated 邏輯後 4 項轉紅（mutation check），
       確認測試確實守得住這次改動而非恆綠
     - dashboard.py 內已無 app_activated 的功能性參照（僅剩一行註解說明原因）
+    - 結案 stack 四個 PR（#6/#7/#9/#10）各自 CI 全綠後才合併，
+      每層行數在 200 以內（L2 200、L3 16、L4 143、L5 +82/-6）
+    - L4 與 L5 在 rebase 後各自單獨跑完整驗證：L4 lint 乾淨、444 測試、build 成功；
+      L5 lint 乾淨、448 測試、build 成功
+    - 前端鏡像的漂移防護以 mutation 驗證：把 src/utils/followup.js 的
+      FOLLOWUP_DAYS 改成 31，六個測試轉紅
+    - main 部署後以錯誤 token 探測 close-followup 與 check-adherence，
+      兩者皆回 401 而非 5xx，證明函式啟動、_shared/followup.ts 有正確 bundle
+    - 前端上線以字串比對確認（非 hash）：線上 bundle 含 CLOSE-OUT、結案剩、
+      今天到期、逾期、已結案五組本次新增字串
+    - close-followup production 實測回 {"today":"2026-08-28","closed":[],"failed":[]}
+      HTTP 200；事後查 patients：completed 仍 1 筆、HSF-001 的 updated_at
+      停在手動結案時刻，未被該次執行改動
+    - check-adherence 於 08-28 06:34Z 的排程班次 success，
+      證明 L1 把 podFor() 搬到 _shared/ 後它在 production 實際執行正常
+    - HSF-006 補登後全體對帳：11 筆非 TEST，missing_pii = 0；
+      新列密文長度反推 姓名 9B／病歷號 8B／電話 10B／出生日期 10B，
+      enrolled_at = patients.created_at
+    - 對照表第 16 列 A–N 全欄樣式與第 15 列相同，下拉清單 G6:G55 與 M6:M55 已涵蓋
     - 每日摘要新段落以四個模擬日期驗證邊界：08-26（WCC POD22，倒數段不出現）、
       08-28（WCC POD23，倒數段出現）、09-04（WCC POD30 顯示「今天到期」）、
       09-14（多人逾期時的排序與計數）。驗證時直接呼叫 build_summary()，
@@ -262,6 +366,12 @@ deliberately_not_done:
     不影響任何分析端點；回填會再動一次 pii_patients，留待 PI 決定
   - HSF-003/004/005 的對照表 M 欄「收案狀態」仍為空（前五列皆填「追蹤中」）。
     屬對照表欄位漏填，與 PII 對齊無關，未一併補
+  - L6（手動覆寫：提前結案／退出／重開）未做。規則是無條件的，加手動入口等於把
+    「要有人記得」放回流程；withdrawn 屬 IRB 層次概念，與「滿 30 天」不是同一件事
+  - study_status 仍是無 CHECK constraint 的自由字串。收緊成 CHECK 或 enum 屬 DDL，
+    收案期間不做
+  - ci.yml 的 deploy-supabase 沒有 path filter，任何 push 到 main（含純文件）
+    都會重新部署全部 9 個 Edge Function。本日發生多次。未加 paths 過濾
   - app_activated 欄位本身未動（未改 DEFAULT、未 DROP），只改讀取端
   - test_dashboard.py 未納入 CI。ci.yml 目前不裝 requests/numpy/matplotlib，
     為一支本機維運腳本在 CI 建 Python 環境不成比例。需手動執行：

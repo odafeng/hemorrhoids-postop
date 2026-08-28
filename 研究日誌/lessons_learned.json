@@ -448,6 +448,11 @@
           "date": "2026-08-14",
           "what": "修 errorLogger 後驗證兩次部署：grep 新增的 \"unserializable object\" 與 code=${e.code} 命中，舊字串 instanceof Error?e:Error(String(e)) 歸零；第二次部署再確認 privateMetadata 歸零",
           "outcome": "有效。線上 hash 為 BT5ghrLM 與 CsWeXwQJ，本機建置為 B-NVepAU——三者皆異，若比 hash 會連續兩次得到假陰性。本次改動同時帶有新增與移除字串，正好落在 limits 所述的適用範圍內。"
+        },
+        {
+          "date": "2026-08-28",
+          "what": "儀表板結案顯示上線後，curl 線上 bundle grep 本次新增的 CLOSE-OUT、結案剩、今天到期、逾期、已結案",
+          "outcome": "五組字串皆命中。本次僅驗新增字串未驗移除字串——移除的是一段 inline POD 算式，minify 後無可靠 grep 目標，落在 limits 所述的適用範圍外"
         }
       ]
     },
@@ -689,7 +694,14 @@
         "memory": [
           "pii-handling-policy"
         ]
-      }
+      },
+      "used_on": [
+        {
+          "date": "2026-08-28",
+          "what": "PI 問「對照表還有誰的 PII 沒對齊」。依此教訓先跑 patients ↔ pii_patients 的 left join，而不是逐列讀對照表",
+          "outcome": "有效，且推翻了問題本身的預設。對照表內八列全部對齊，缺的是 FIH-002/003 兩位連對照表都沒登錄的個案（延遲 1–2 天）。當日稍晚同一查詢再抓到 HSF-006（延遲數小時）。三次都是人工那半漏掉，自動那半（patients）從未漏"
+        }
+      ]
     },
     {
       "id": "LL-2026-08-14-04",
@@ -765,7 +777,14 @@
           "2026-08-23.yaml#findings-4",
           "2026-08-12.yaml"
         ]
-      }
+      },
+      "used_on": [
+        {
+          "date": "2026-08-28",
+          "what": "做結案規則前先數 POD 計算的拷貝數，含 repo 外的 ~/.hemorrhoids-daily/daily_summary.py",
+          "outcome": "數到四份：check-adherence/schedule.ts 的 podFor()、supabaseService.js 的 getPODFromDate()、ResearcherDashboard.jsx 的 inline 算式、daily_summary.py。因此 L1 改為「把既有 podFor 上移到 _shared/」而非新寫一份，L5 把儀表板那份換成既有 helper（順帶修掉它沒歸零時分、可能多算一天的問題）"
+        }
+      ]
     },
     {
       "id": "LL-2026-08-23-02",
@@ -800,6 +819,84 @@
         "lessons": [],
         "journal": [
           "2026-08-23.yaml#findings-3"
+        ]
+      }
+    },
+    {
+      "id": "LL-2026-08-28-01",
+      "title": "修正要跟著引入問題的那一層，不是跟著發現問題的那一層",
+      "date_learned": "2026-08-28",
+      "status": "resolved",
+      "severity": "medium",
+      "domains": [
+        "stacked-pr",
+        "ci",
+        "code-review"
+      ],
+      "context": "App 端結案流程分五層以 stacked PR 送出，規則要求每層 200 行以內、每層必須獨立正確且獨立可 revert。",
+      "symptom": "PR #9（L4 前端鏡像）單獨跑 CI 紅在 lint：'process' is not defined。其上的 PR #10（L5）卻是綠的。",
+      "root_cause": {
+        "statement": "L4 新增的測試用 process.cwd() 讀檔比對，ESLint 的 browser env 沒有定義 process，該行在 L4 就已違規。但問題是在寫 L5 時才被 lint 跑出來，修正（globalThis.process）於是順手進了 L5 的 commit。從堆疊頂端看一切正常，因為 L5 的工作樹含 L4+L5 兩層。"
+      },
+      "resolution": {
+        "approach": "把修正 amend 進 L4，再以 git rebase --onto 把 L5 移上去，然後兩層各自 checkout 出來跑完整驗證（lint + 全部測試 + build），而不是只驗頂端。",
+        "cost": "一次 amend 加一次 rebase；期間工作區的 pre-existing 未提交刪除需先 stash"
+      },
+      "principle": {
+        "statement": "在 stacked PR 裡，一個修正屬於「第一個含有該問題的那一層」，不屬於「你注意到它的那一層」。判斷方法不是看 diff 讀起來順不順，而是實際 checkout 每一層單獨跑 CI 會跑的那些指令。堆疊頂端全綠不代表下層可合——每層的 CI 是各自跑的。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "在上層工作時修掉一個 lint / 型別 / 測試錯誤，而該錯誤的成因在下層",
+        "只驗證了堆疊頂端的分支，沒有逐層 checkout 驗證",
+        "某一層的 diff 裡出現與該層主題無關的單行修正"
+      ],
+      "used_on": null,
+      "related": {
+        "lessons": [],
+        "journal": [
+          "2026-08-28.yaml#findings-9"
+        ]
+      }
+    },
+    {
+      "id": "LL-2026-08-28-02",
+      "title": "有 DEFAULT、有讀取端、沒有寫入端，就是一個會靜靜說謊的欄位",
+      "date_learned": "2026-08-28",
+      "status": "partially_resolved",
+      "severity": "medium",
+      "domains": [
+        "schema",
+        "data-integrity",
+        "primary-outcome"
+      ],
+      "context": "2026-08-12 的 lesson_zone_a 已就 app_activated 記過一次同型問題。本日在一小時內又撞到兩個：app_activated 與 study_status。",
+      "symptom": "app_activated 十筆全 false，dashboard 的啟用率恆為 0%。study_status 十一筆全 active，追蹤期結束沒有任何一端出聲，HSF-001 逾期五天無人察覺。",
+      "root_cause": {
+        "statement": "NOT NULL DEFAULT 讓「從未被寫入」與「值為否」在查詢結果裡完全相同。欄位有讀取端所以看起來在運作，有預設值所以永遠不會是 NULL，於是沒有任何訊號指出它從來沒有寫入端。app_activated 的唯一讀取端是本機腳本；study_status 的唯一寫入端 patient-onboard 寫死 active，completed 與 withdrawn 從未被寫過。"
+      },
+      "resolution": {
+        "approach": "app_activated：不動欄位，改讀取端以「至少一筆 symptom_report」認定（0% → 90%）。study_status：新增 close-followup Edge Function 補上寫入端，POD 30 自動寫 completed。兩者都不做 DDL——收案期間不動 production schema。",
+        "cost": "app_activated 留成死欄位待收案結束清理；study_status 仍無 CHECK constraint，拼錯字會讓病人靜默掉出 active 集合"
+      },
+      "principle": {
+        "statement": "要判斷一個欄位是否真的在運作，問「哪一行程式碼會寫它」，不要問「它有沒有值」。有 DEFAULT 的欄位永遠有值。grep 寫入端比看資料快，也比看資料誠實。這件事在同一個 schema 裡重複出現，代表該用一次盤點掃過全部有 DEFAULT 的欄位，而不是逐個踩到才發現。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "某個布林或列舉欄位在全部資料列上取值完全一致",
+        "欄位宣告了 NOT NULL DEFAULT，但 grep 不到任何 UPDATE 或 INSERT 帶它",
+        "某個狀態機只有初始狀態被寫過，其餘狀態只出現在 WHERE 子句裡"
+      ],
+      "used_on": null,
+      "related": {
+        "lessons": [
+          "LL-2026-08-14-03"
+        ],
+        "journal": [
+          "2026-08-28.yaml#findings-6",
+          "2026-08-28.yaml#findings-8",
+          "2026-08-12.yaml#lesson_zone_a"
         ]
       }
     }
