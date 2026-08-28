@@ -896,9 +896,11 @@
         "journal": [
           "2026-08-28.yaml#findings-6",
           "2026-08-28.yaml#findings-8",
-          "2026-08-12.yaml#lesson_zone_a"
+          "2026-08-12.yaml#lesson_zone_a",
+          "2026-08-28.yaml#findings-12"
         ]
-      }
+      },
+      "retrospective_note": "同日稍晚出現第四個實例，而且是下游型的：研究者儀表板的 ENROLLED 卡片，標籤寫「收案」數字卻取 activePatients。結案機制上線前 study_status 只有 active 一種值，兩者永遠相等，所以標籤錯了也沒有任何畫面差異；HSF-001 一結案就顯示成「10 of 11」，而且會隨受試者陸續完成一路往下掉，收滿並全部追蹤完成時顯示 0。推論：欄位沒有寫入端時，不只欄位本身在說謊，依賴它的顯示邏輯與測試也一併失去鑑別力——既有的「ENROLLED 不計入 TEST-001」測試 fixture 全為 active，從來分辨不出「累計收案」與「仍在追蹤」這兩種讀法。所以盤點帶 DEFAULT 的欄位時，要一併看它的讀取端與那些讀取端的測試 fixture 是否只覆蓋單一狀態。"
     }
   ],
   "open_items": [

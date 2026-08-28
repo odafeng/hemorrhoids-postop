@@ -165,6 +165,24 @@ findings:
       發現機制仍是「剛好查到」，不是任何自動提示。findings 1 描述的結構沒有改變，
       只是這次查詢頻率高。若無人查，缺口一樣不會有人報錯。
 
+  - id: 12
+    severity: medium
+    issue: ENROLLED 卡片的標籤與數字不一致，被結案機制照出來
+    detail: >
+      ResearcherDashboard 的 ENROLLED 卡片主數字取 activePatients
+      （study_status === 'active'），小字取 studyPatients.length（全部非 TEST）。
+      HSF-001 結案後兩者首次分歧，顯示為「10 of 11 total」。
+      結案上線前 study_status 只有 'active' 一種值，兩個數字永遠相等，
+      標籤寫 ENROLLED 卻算「仍在追蹤」完全看不出來。
+      小字的 fallback 寫 `|| 40`，與 IRB Ver 2 的 50 例目標不符；
+      它只在世代為空時 render，所以過期數字長期無人發現。
+    consequence: >
+      放著不管，招募進度的數字會隨受試者陸續完成而下降：
+      9/4 WCC-001/002 結案後變 8/11，收滿 50 例並全部追蹤完成時顯示 0。
+      這是 findings 6 與 8 的下游——欄位沒有寫入端時，依賴它的顯示邏輯
+      也不會被檢驗。既有的「ENROLLED 不計入 TEST-001」測試 fixture 全為 active，
+      從來分辨不出這兩種讀法。
+
 hypotheses_ruled_out:
   - hypothesis: 對照表裡有受試者的 PII 尚未寫入 pii_patients
     disproved_by: >
@@ -311,6 +329,15 @@ decisions:
       其手術日為 2026-08-29，登錄當日尚未進入追蹤期。其餘各列的「追蹤中」
       皆為術後狀態。此欄為下拉選單，PI 若要統一格式可逕行修改。
 
+  - id: D11
+    decision: ENROLLED 主數字改為累計收案，小字帶目標與追蹤中人數
+    rationale: >
+      對以 50 例為招募目標的研究，招募進度的數字不應該往下掉。
+      已結案人數旁邊的 CLOSE-OUT 卡已有，不重複。
+      `|| 40` 換成具名常數 ENROLMENT_TARGET = 50。
+      本次為獨立 PR（#12），不疊在結案 stack 上——它修的是被那項工作照出來、
+      而非由那項工作造成的缺陷。
+
 verification:
   scope: >
     只驗證兩筆新列的寫入正確性與既有八筆的持續一致性，未重新驗證加密金鑰本身，
@@ -352,6 +379,9 @@ verification:
       新列密文長度反推 姓名 9B／病歷號 8B／電話 10B／出生日期 10B，
       enrolled_at = patients.created_at
     - 對照表第 16 列 A–N 全欄樣式與第 15 列相同，下拉清單 G6:G55 與 M6:M55 已涵蓋
+    - ENROLLED 修正（PR 12）：lint 乾淨、450 測試通過、build 成功。
+      兩個新測試釘住「completed／withdrawn 仍計入 ENROLLED」與「小字報出目標與
+      追蹤中人數」；以 mutation 驗證——把 activePatients 放回主數字，第一個測試轉紅
     - 每日摘要新段落以四個模擬日期驗證邊界：08-26（WCC POD22，倒數段不出現）、
       08-28（WCC POD23，倒數段出現）、09-04（WCC POD30 顯示「今天到期」）、
       09-14（多人逾期時的排序與計數）。驗證時直接呼叫 build_summary()，
@@ -372,6 +402,9 @@ deliberately_not_done:
     收案期間不做
   - ci.yml 的 deploy-supabase 沒有 path filter，任何 push 到 main（含純文件）
     都會重新部署全部 9 個 Edge Function。本日發生多次。未加 paths 過濾
+  - 未盤點 schema 中其餘帶 DEFAULT 的欄位。今日同型問題出現四次
+    （app_activated 兩處讀取端、study_status、ENROLLED 顯示），
+    逐個踩到才發現的成本已經高於一次全面盤點，但那是獨立任務
   - app_activated 欄位本身未動（未改 DEFAULT、未 DROP），只改讀取端
   - test_dashboard.py 未納入 CI。ci.yml 目前不裝 requests/numpy/matplotlib，
     為一支本機維運腳本在 CI 建 Python 環境不成比例。需手動執行：
