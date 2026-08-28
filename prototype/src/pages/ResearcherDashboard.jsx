@@ -31,6 +31,7 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
   const [patients, setPatients] = useState([]);
   const [adherence, setAdherence] = useState([]);
   const [alerts, setAlerts] = useState([]);
+  const [showAckedAlerts, setShowAckedAlerts] = useState(false);
   const [unreviewedCount, setUnreviewedCount] = useState(0);
   const [ackingId, setAckingId] = useState(null);
   const [allReports, setAllReports] = useState([]);
@@ -883,39 +884,59 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
       </div>
 
       {/* Alerts */}
-      {alerts.length > 0 && (
-        <>
-          <div className="card-kicker" style={{ margin: '18px 4px 10px' }}>
-            ALERT HISTORY · {alerts.filter(a => !a.acknowledged).length} UNACKED
-          </div>
-          {alerts.map(a => (
-            <div key={a.id} className={`alert-banner ${a.alert_level === 'danger' ? 'danger' : ''}`} style={{ position: 'relative' }}>
-              <div className="al-icon"><I.Alert width={18} height={18} /></div>
-              <div style={{ flex: 1 }}>
-                <div className="al-title">{a.study_id} — {a.alert_type}</div>
-                <div className="al-msg">{a.message}</div>
-                <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>
-                  {a.triggered_at} {a.acknowledged ? '· 已確認' : '· 未確認'}
-                </div>
+      {alerts.length > 0 && (() => {
+        // 已確認的仍然留著（ALERT HISTORY 是刻意的），但收合起來。攤開來會讓一整
+        // 頁已解決的卡片和未處理的長得一樣重，而它只會隨收案數單調成長。
+        // 完整紀錄仍可由上方的「警示紀錄」CSV 匯出取得。
+        const unacked = alerts.filter(a => !a.acknowledged);
+        const acked = alerts.filter(a => a.acknowledged);
+        const banner = (a) => (
+          <div key={a.id} className={`alert-banner ${a.alert_level === 'danger' ? 'danger' : ''}`} style={{ position: 'relative' }}>
+            <div className="al-icon"><I.Alert width={18} height={18} /></div>
+            <div style={{ flex: 1 }}>
+              <div className="al-title">{a.study_id} — {a.alert_type}</div>
+              <div className="al-msg">{a.message}</div>
+              <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>
+                {a.triggered_at} {a.acknowledged ? '· 已確認' : '· 未確認'}
               </div>
-              {!a.acknowledged && (
-                <button
-                  onClick={() => handleAcknowledge(a.id)}
-                  disabled={ackingId === a.id}
-                  style={{
-                    background: 'var(--surface)', border: '1px solid var(--line)',
-                    borderRadius: 6, color: 'var(--ok)',
-                    fontSize: 11, padding: '4px 8px', cursor: 'pointer',
-                    whiteSpace: 'nowrap', alignSelf: 'center',
-                    fontFamily: 'var(--font-mono)', letterSpacing: '0.04em',
-                  }}>
-                  {ackingId === a.id ? '…' : '✓ 確認'}
-                </button>
-              )}
             </div>
-          ))}
-        </>
-      )}
+            {!a.acknowledged && (
+              <button
+                onClick={() => handleAcknowledge(a.id)}
+                disabled={ackingId === a.id}
+                style={{
+                  background: 'var(--surface)', border: '1px solid var(--line)',
+                  borderRadius: 6, color: 'var(--ok)',
+                  fontSize: 11, padding: '4px 8px', cursor: 'pointer',
+                  whiteSpace: 'nowrap', alignSelf: 'center',
+                  fontFamily: 'var(--font-mono)', letterSpacing: '0.04em',
+                }}>
+                {ackingId === a.id ? '…' : '✓ 確認'}
+              </button>
+            )}
+          </div>
+        );
+        return (
+          <>
+            <div className="card-kicker" style={{ margin: '18px 4px 10px' }}>
+              ALERT HISTORY · {unacked.length} UNACKED
+            </div>
+            {unacked.map(banner)}
+            {acked.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  className="acked-toggle"
+                  aria-expanded={showAckedAlerts}
+                  onClick={() => setShowAckedAlerts(v => !v)}>
+                  {showAckedAlerts ? '收合' : '展開'}已確認 {acked.length} 則
+                </button>
+                {showAckedAlerts && acked.map(banner)}
+              </>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }
