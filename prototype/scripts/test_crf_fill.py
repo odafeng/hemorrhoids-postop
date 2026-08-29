@@ -102,5 +102,86 @@ class TestBackupWorkbook(unittest.TestCase):
             self.assertTrue(dest.name.endswith('.xlsx'))
 
 
+class TestUpsert(unittest.TestCase):
+    AUTO = {
+        'Study ID': lambda r: r['study_id'],
+        '回報日期': lambda r: crf_fill.norm_date(r['report_date']),
+        '疼痛 NRS': lambda r: r['pain_nrs'],
+    }
+    KEY = ('Study ID', '回報日期')
+
+    def _sheet(self):
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        for col, name in enumerate(['Study ID', '回報日期', '疼痛 NRS', '備註'], start=1):
+            ws.cell(row=5, column=col).value = name
+        return ws
+
+    def test_inserts_new_rows(self):
+        ws = self._sheet()
+        crf_fill.upsert_sheet(ws, 5, self.KEY, [
+            {'study_id': 'AAA-001', 'report_date': '2026-08-11', 'pain_nrs': 3},
+        ], self.AUTO)
+        self.assertEqual(ws.cell(row=6, column=1).value, 'AAA-001')
+        self.assertEqual(ws.cell(row=6, column=3).value, 3)
+
+    def test_manual_column_survives_rerun(self):
+        ws = self._sheet()
+        rec = {'study_id': 'AAA-001', 'report_date': '2026-08-11', 'pain_nrs': 3}
+        crf_fill.upsert_sheet(ws, 5, self.KEY, [rec], self.AUTO)
+        ws.cell(row=6, column=4).value = '主持人判讀為傷口分泌物'
+        rec['pain_nrs'] = 5
+        crf_fill.upsert_sheet(ws, 5, self.KEY, [rec], self.AUTO)
+        self.assertEqual(ws.cell(row=6, column=3).value, 5)
+        self.assertEqual(ws.cell(row=6, column=4).value, '主持人判讀為傷口分泌物')
+
+    def test_manual_column_follows_its_own_row_when_order_changes(self):
+        """靠列號對位的實作在前兩個測試也會過，只有這裡會現形：
+        插入一筆較早的日期讓列序改變，手填備註不能接到別人身上。"""
+        ws = self._sheet()
+        later = {'study_id': 'AAA-001', 'report_date': '2026-08-11', 'pain_nrs': 3}
+        crf_fill.upsert_sheet(ws, 5, self.KEY, [later], self.AUTO)
+        ws.cell(row=6, column=4).value = '屬於 08-11 的備註'
+
+        earlier = {'study_id': 'AAA-001', 'report_date': '2026-08-09', 'pain_nrs': 7}
+        crf_fill.upsert_sheet(ws, 5, self.KEY, [earlier, later], self.AUTO)
+
+        rows = {crf_fill.norm_date(ws.cell(row=r, column=2).value): r for r in (6, 7)}
+        self.assertEqual(ws.cell(row=rows['2026-08-11'], column=4).value, '屬於 08-11 的備註')
+        self.assertIsNone(ws.cell(row=rows['2026-08-09'], column=4).value)
+
+    def test_excel_datetime_key_matches_json_string(self):
+        ws = self._sheet()
+        ws.cell(row=6, column=1).value = 'AAA-001'
+        ws.cell(row=6, column=2).value = datetime(2026, 8, 11)
+        ws.cell(row=6, column=4).value = '既有備註'
+        crf_fill.upsert_sheet(ws, 5, self.KEY, [
+            {'study_id': 'AAA-001', 'report_date': '2026-08-11T00:00:00+00:00', 'pain_nrs': 9},
+        ], self.AUTO)
+        self.assertIsNone(ws.cell(row=7, column=1).value)  # 沒有新增重複列
+        self.assertEqual(ws.cell(row=6, column=3).value, 9)
+        self.assertEqual(ws.cell(row=6, column=4).value, '既有備註')
+
+    def test_new_row_copies_style_from_previous_row(self):
+        ws = self._sheet()
+        crf_fill.upsert_sheet(ws, 5, self.KEY, [
+            {'study_id': 'AAA-001', 'report_date': '2026-08-09', 'pain_nrs': 1},
+        ], self.AUTO)
+        ws.cell(row=6, column=1).font = openpyxl.styles.Font(bold=True, size=13)
+        crf_fill.upsert_sheet(ws, 5, self.KEY, [
+            {'study_id': 'AAA-001', 'report_date': '2026-08-09', 'pain_nrs': 1},
+            {'study_id': 'AAA-002', 'report_date': '2026-08-09', 'pain_nrs': 2},
+        ], self.AUTO)
+        self.assertTrue(ws.cell(row=7, column=1).font.bold)
+        self.assertEqual(ws.cell(row=7, column=1).font.size, 13)
+
+    def test_missing_column_aborts(self):
+        ws = self._sheet()
+        with self.assertRaises(crf_fill.CrfError):
+            crf_fill.upsert_sheet(ws, 5, self.KEY, [
+                {'study_id': 'AAA-001', 'report_date': '2026-08-09', 'pain_nrs': 1},
+            ], {**self.AUTO, '不存在的欄位': lambda r: 1})
+
+
 if __name__ == '__main__':
     unittest.main()
