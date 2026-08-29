@@ -27,6 +27,22 @@ export const DB_COLUMNS = [
 // Frontend report keys (what SymptomReport.jsx puts in the report object)
 export const FRONTEND_REPORT_KEYS = Object.values(SYMPTOM_FIELDS).map(f => f.frontendKey);
 
+/**
+ * Tables the researcher dashboard's full backup writes into its JSON.
+ * scripts/crf_fill.py reads the CRF workbook's derivable columns out of these
+ * exact keys, so renaming one means editing the script too.
+ */
+export const FULL_BACKUP_TABLES = [
+  'patients',
+  'symptom_reports',
+  'alerts',
+  'ai_chat_logs',
+  'surgical_records',
+  'usability_surveys',
+  'healthcare_utilization',
+  'adherence_summary',
+];
+
 // =====================
 // Wound field helpers
 // =====================

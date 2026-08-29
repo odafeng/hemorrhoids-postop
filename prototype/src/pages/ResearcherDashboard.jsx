@@ -286,16 +286,31 @@ export default function ResearcherDashboard({ onNavigate, isDemo, userInfo, onLo
     try {
       let data;
       if (isDemo) {
+        // Demo has no surgical records, surveys or utilisation. Empty arrays rather
+        // than invented rows: the CRF must never be filled from demo data.
         const mock = getResearcherMockData();
-        data = { patients: mock.patients, symptom_reports: mock.reports, alerts: mock.alerts, ai_chat_logs: mock.chatLogs };
+        data = {
+          patients: mock.patients, symptom_reports: mock.reports,
+          alerts: mock.alerts, ai_chat_logs: mock.chatLogs,
+          surgical_records: [], usability_surveys: [],
+          healthcare_utilization: [], adherence_summary: [],
+        };
       } else {
-        const [reports, alertData, chats, pts] = await Promise.all([
+        const [reports, alertData, chats, pts, surg, surveys, hcu, adh] = await Promise.all([
           sb.getAllReportsForResearcher(),
           sb.getAllAlertsForResearcher(),
           sb.getAllChatsForResearcher(),
           sb.getAllPatients(),
+          sb.getAllSurgicalRecordsForResearcher(),
+          sb.getAllSurveysForResearcher(),
+          sb.getAllUtilizationForResearcher(),
+          sb.getAdherenceSummary(),
         ]);
-        data = { patients: pts, symptom_reports: reports, alerts: alertData, ai_chat_logs: chats };
+        data = {
+          patients: pts, symptom_reports: reports, alerts: alertData, ai_chat_logs: chats,
+          surgical_records: surg, usability_surveys: surveys,
+          healthcare_utilization: hcu, adherence_summary: adh,
+        };
       }
       downloadJSON(data, `full_backup_${today}.json`);
     } catch (err) { alert('備份失敗：' + err.message); }

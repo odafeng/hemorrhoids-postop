@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SYMPTOM_FIELDS, DB_COLUMNS, FRONTEND_REPORT_KEYS } from '../schemaContract';
+import { SYMPTOM_FIELDS, DB_COLUMNS, FRONTEND_REPORT_KEYS, FULL_BACKUP_TABLES } from '../schemaContract';
 
 /**
  * Schema alignment tests — ensures frontend and DB stay in sync.
@@ -157,5 +157,27 @@ describe('Schema Alignment — Frontend ↔ DB', () => {
     expect(tests).toContain('dedup');         // duplicate dedup test
     expect(tests).toContain('TEST-REACK');   // re-trigger after acknowledge
     expect(tests).toContain('TEST-FIXUP');   // correction (abnormal → normal)
+  });
+});
+
+describe('Full backup ↔ CRF', () => {
+
+  it('FULL_BACKUP_TABLES lists the eight sources the CRF is filled from', () => {
+    expect([...FULL_BACKUP_TABLES].sort()).toEqual([
+      'adherence_summary', 'ai_chat_logs', 'alerts', 'healthcare_utilization',
+      'patients', 'surgical_records', 'symptom_reports', 'usability_surveys',
+    ]);
+  });
+
+  // Declaring the list proves nothing on its own: a table left out of the
+  // Promise.all produces a backup that downloads fine and leaves those CRF
+  // columns blank. Check the handler actually puts each key in the payload.
+  it('handleFullBackup puts every one of them in the downloaded object', () => {
+    const src = readSrc('src/pages/ResearcherDashboard.jsx');
+    const from = src.indexOf('const handleFullBackup');
+    const body = src.slice(from, src.indexOf('\n  };', from));
+    for (const table of FULL_BACKUP_TABLES) {
+      expect(body).toContain(`${table}:`);
+    }
   });
 });
