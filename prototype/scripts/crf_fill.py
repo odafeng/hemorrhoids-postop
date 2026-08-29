@@ -66,6 +66,30 @@ def load_backup(path=None, search_dir=None):
     return json.loads(candidates[0].read_text(encoding='utf-8'))
 
 
+# 與 src/utils/schemaContract.js 的 FULL_BACKUP_TABLES 同一份清單。
+EXPECTED_TABLES = [
+    'patients', 'symptom_reports', 'alerts', 'ai_chat_logs',
+    'surgical_records', 'usability_surveys', 'healthcare_utilization',
+    'adherence_summary',
+]
+
+
+def check_backup_shape(backup):
+    """舊版 App 產生的備份只有 4 張表。
+
+    不先擋下來的話，check_coverage 會報「全部受試者都缺手術記錄」——
+    那是查錯欄位，不是真的缺資料，而兩者在訊息上長得一模一樣
+    （研究日誌 lessons_learned LL-2026-08-14-02）。
+    """
+    missing = [t for t in EXPECTED_TABLES if t not in backup]
+    if missing:
+        raise CrfError(
+            f'這份備份少了 {len(missing)} 張表：{"、".join(missing)}\n'
+            '看起來是舊版 App 產生的。請重新整理 Dashboard 後再按一次「完整備份」，'
+            '確認下載的檔案較新，再重跑。'
+        )
+
+
 def check_coverage(backup):
     """回傳缺手術記錄的 study_id。
 
@@ -356,6 +380,7 @@ SHEETS = {
 
 def run(backup, crf_path=CRF_PATH):
     """填入自動欄。中止時完全沒有副作用，包含不留快照。"""
+    check_backup_shape(backup)
     missing = check_coverage(backup)
     if missing:
         raise CrfError(

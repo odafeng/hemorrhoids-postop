@@ -65,6 +65,31 @@ class TestCoverage(unittest.TestCase):
         self.assertEqual(crf_fill.check_coverage(b), [])
 
 
+class TestBackupShape(unittest.TestCase):
+    def test_complete_backup_passes(self):
+        crf_fill.check_backup_shape({t: [] for t in crf_fill.EXPECTED_TABLES})
+
+    def test_old_four_table_backup_is_named_as_such(self):
+        """舊版 App 只匯出 4 張表。若只靠 check_coverage，訊息會變成
+        「全部受試者都缺手術記錄」——把查錯欄位講成查無資料。"""
+        old = {t: [] for t in
+               ['patients', 'symptom_reports', 'alerts', 'ai_chat_logs']}
+        with self.assertRaises(crf_fill.CrfError) as cm:
+            crf_fill.check_backup_shape(old)
+        msg = str(cm.exception)
+        self.assertIn('surgical_records', msg)
+        self.assertIn('舊版', msg)
+
+    def test_expected_tables_match_the_frontend_contract(self):
+        """清單在 schemaContract.js 與這裡各有一份，改一邊要紅。"""
+        contract = (pathlib.Path(crf_fill.__file__).resolve().parents[1]
+                    / 'src' / 'utils' / 'schemaContract.js').read_text(encoding='utf-8')
+        start = contract.index('export const FULL_BACKUP_TABLES = [')
+        block = contract[start:contract.index('];', start)]
+        self.assertEqual(set(re.findall(r"'([a-z_]+)'", block)),
+                         set(crf_fill.EXPECTED_TABLES))
+
+
 class TestHeaderMap(unittest.TestCase):
     def test_maps_names_to_one_based_columns(self):
         wb = openpyxl.Workbook()
