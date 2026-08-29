@@ -36,7 +36,7 @@
 
 - [ ] **Step 1: 讀既有樣式**
 
-先讀 `prototype/src/utils/supabaseService.js` 裡的 `getAllAlertsForResearcher()`（約在 750 行）。三個新函式照它寫：失敗時 `console.error` + `logError` + `throw`，不要吞成空陣列。理由寫在該函式的註解裡——「0 筆」和「查詢失敗」在 PI 的總覽上不能長得一樣。
+先讀 `prototype/src/utils/supabaseService.js` 裡的 `getAllAlertsForResearcher()`（約在 750 行）。三個新函式照它寫：失敗時 `console.error` + `logError` + `throw`，不要吞成空陣列。理由寫在該函式的註解裡：「0 筆」和「查詢失敗」在 PI 的總覽上不能長得一樣。
 
 - [ ] **Step 2: 寫失敗的測試**
 
@@ -364,7 +364,7 @@ it('缺就醫日期時按鈕不可按', async () => {
 });
 ```
 
-POD 由就醫日期減手術日期得出，不讓人手填——手填會出現跟症狀回報對不起來的 POD。
+POD 由就醫日期減手術日期得出，不讓人手填，手填會出現跟症狀回報對不起來的 POD。
 
 - [ ] **Step 6: 執行測試確認失敗**
 
@@ -410,7 +410,7 @@ Expected: FAIL，找不到「就醫類型」
 >登錄</button>
 ```
 
-就醫類型的選項用 `<option>` 列出：門診、急診、再住院、電話諮詢。這四個要與 CRF `表單四` 的「就醫類型」欄位用語一致——腳本是原字串寫入，不做對照。
+就醫類型的選項用 `<option>` 列出：門診、急診、再住院、電話諮詢。這四個要與 CRF `表單四` 的「就醫類型」欄位用語一致，腳本是原字串寫入，不做對照。
 
 - [ ] **Step 8: 執行測試確認通過**
 
@@ -1093,7 +1093,7 @@ class TestMain(unittest.TestCase):
             self.assertIsNone(ws.cell(row=7, column=idx['Study ID']).value)
 ```
 
-「涵蓋率不足時不寫檔」要連備份檔都不產生——中止就該完全沒有副作用。
+「涵蓋率不足時不寫檔」要連備份檔都不產生。中止就該完全沒有副作用。
 
 - [ ] **Step 2: 執行測試確認失敗**
 
@@ -1172,7 +1172,7 @@ cd "/Users/huangshifeng/Desktop/Research/AI_Clinical/痔瘡AI衛教/prototype/sc
 
 檢查輸出：備份檔名、六個分頁各寫入幾列。開啟 CRF 確認三件事：手填的 HSF-001 備註仍在、`個案總覽` 的 `POD（今日）` 仍是公式、`表單一` 的年齡/性別/BMI 仍為空白。
 
-若因 FIH-003 缺手術記錄而中止，那是預期行為——請主刀醫師從 App 補登後重跑，不要為了跑過去而放寬檢查。
+若因 FIH-003 缺手術記錄而中止，那是預期行為，請主刀醫師從 App 補登後重跑，不要為了跑過去而放寬檢查。
 
 - [ ] **Step 6: 補登既有的就醫事件**
 
@@ -1199,7 +1199,7 @@ CRF 工作簿本身與備份檔都被 `.gitignore:40` 涵蓋，不會進版控�
 
 ## Self-Review
 
-**Spec coverage：** spec 的每一節都有對應任務——欄位權責邊界對到 Task 6 的 `SHEETS` 與其測試；架構 (a) 對到 Task 1–2，(b) 對到 Task 4–7；錯誤處理對到 Task 4 的 `check_coverage` 與 Task 7 的中止測試；測試一節的五項驗證分別落在 Task 5（1、2、5）、Task 6（3）、Task 7（4）。
+**Spec coverage：** spec 的每一節都有對應任務。欄位權責邊界對到 Task 6 的 `SHEETS` 與其測試；架構 (a) 對到 Task 1–2，(b) 對到 Task 4–7；錯誤處理對到 Task 4 的 `check_coverage` 與 Task 7 的中止測試；測試一節的五項驗證分別落在 Task 5（1、2、5）、Task 6（3）、Task 7（4）。
 
 **spec 未涵蓋而本計畫補上的：** spec 的「三個洞」表提到醫療利用要補最小 insert 路徑，但架構一節沒有描述它長什麼樣。Task 3 補上這個決定：`addUtilization()` 加上 `ResearcherPatientLookup` 的登錄卡片，POD 由日期相減算出而非手填。
 
