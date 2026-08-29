@@ -1099,6 +1099,65 @@
       "action": "n 增加後重看可用性問卷的分布；若仍觸頂，改報中位數與全距，並以自由文字為主要可用性證據",
       "owner": "unassigned",
       "priority": "low"
+    },
+    {
+      "lesson_id": "LL-2026-08-14-03",
+      "action": "FIH-003 補登 surgical_records。其餘 10 例皆有，僅此一例缺；crf_fill.py 的涵蓋率檢查會因此中止且不寫檔。",
+      "owner": "主刀醫師（FIH）",
+      "blocks": "crf_fill.py 對真實 CRF 的第一次完整執行",
+      "priority": "high",
+      "note": "手術日 2026-08-28。由 App 的手術記錄頁登錄，researcher_insert_own_surgeon policy 允許主刀醫師自行寫入。"
+    },
+    {
+      "lesson_id": "LL-2026-08-14-03",
+      "action": "前端部署綠燈後，以 PI 帳號從研究人員 Dashboard 下載完整備份，執行 cd prototype/scripts && /usr/local/bin/python3 crf_fill.py，核對六個分頁列數與手填欄是否完好。",
+      "owner": "PI",
+      "blocks": "CRF 追平 DB",
+      "priority": "high",
+      "note": "必須是 PI 帳號：surgical_records 的 researcher_read_own_surgeon 會讓其他研究人員下載到的備份少列。涵蓋率檢查擋得住，但會直接中止。前置條件是上一項 FIH-003 已補登。"
+    },
+    {
+      "lesson_id": "LL-2026-08-14-03",
+      "action": "補述 WCC-002 於 2026-08-11 那次重返急診的就醫原因。目前 reason 欄寫的是「重返急診（來源：收案對照表備註；就醫原因未記載，待 PI 補述）」。",
+      "owner": "PI",
+      "priority": "medium",
+      "note": "2026-08-29 由 MCP 補登，POD 6。收案對照表備註只記了「重返急診」四個字，無原因細節。這是目前 healthcare_utilization 唯一一列。"
+    },
+    {
+      "lesson_id": "LL-2026-08-28-02",
+      "action": "回溯補登全體受試者的年齡、性別、BMI。三欄自收案起從未被寫入過，patients 全為 NULL，CRF 表單一對應三格亦空白。",
+      "owner": "PI",
+      "blocks": "Table 1 的基線人口學；依從率分析的共變項",
+      "priority": "medium",
+      "note": "2026-08-29 決定收案結束後處理。在那之前 v_adherence_summary 的 age / sex / surgery_type 三欄也是空的。無寫入端，需由 SQL 直接補；欄位已存在，不需要 DDL。"
+    },
+    {
+      "lesson_id": "LL-2026-08-28-02",
+      "action": "一次盤點 schema 中所有帶 DEFAULT 的欄位，逐一確認有無寫入端。",
+      "owner": "unassigned",
+      "priority": "medium",
+      "note": "同型問題已出現六次：app_activated 兩處讀取端、study_status、ENROLLED 顯示、age/sex/bmi、healthcare_utilization（有表有讀取函式無 insert，且讀取函式零呼叫端）。逐個踩到的成本已明顯高於一次全面盤點。本則 lesson 於 2026-08-28 就預告過這件事。"
+    },
+    {
+      "lesson_id": "LL-2026-08-14-03",
+      "action": "更新收案對照表的收案狀態欄：HSF-001 應為「已完成」（2026-08-22 結案）、HSF-006 仍停在「已簽同意書」、HSF-003/004/005 仍空白。",
+      "owner": "PI",
+      "priority": "low",
+      "note": "2026-08-29 的 CRF 工作只處理 CRF 這一側，對照表未動。改動前先備份成 收案對照表.bak-YYYYMMDD.xlsx，寫值後要 copy 前一列的 _style。"
+    },
+    {
+      "lesson_id": "LL-2026-08-28-02",
+      "action": "收案結束後決定 alerts 是否新增處理方式／處理結果／是否為假陽性／處理人員四欄，把紙本的臨床判讀併入資料庫。",
+      "owner": "unassigned",
+      "priority": "low",
+      "note": "屬 DDL，收案期間不做。目前這四欄只存在於 CRF 表單三與資料澄清註記分頁。"
+    },
+    {
+      "lesson_id": "LL-2026-08-23-01",
+      "action": "getAllChatsForResearcher() 的 200 列上限：超過後完整備份的 ai_chat_logs 會截斷，CRF 的「AI 衛教使用次數」開始少算且不會報錯。",
+      "owner": "unassigned",
+      "priority": "low",
+      "note": "2026-08-29 時 19 列，無影響。該上限本是為 chat review 佇列設的，備份沿用同一個函式才連帶受限。"
     }
   ],
   "backlog_note": "2026-08-12 以前的每日 YAML 亦各自帶有 lesson 欄位（含 08-05 的寄信分層、08-12 上午的測試帳號污染統計、身分對應漏登）。尚未萃取進本檔，可另行補齊。"
