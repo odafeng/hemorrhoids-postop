@@ -83,6 +83,53 @@ def backup_workbook(path):
     return dest
 
 
+# surgical_records 存的是代碼（closed、ligasure、LMGA），CRF「選項清單」分頁宣告的
+# 允許值是人看的標籤。症狀類欄位不需要這層：DB 存的就是「少量」「未排」這種短式，
+# 與選項清單的首詞和既有手填列都一致，原值寫入即可。
+#
+# 代碼集合由 test_crf_fill 對 src/pages/SurgicalRecord.jsx 比對釘住：App 加了新選項
+# 而這裡沒跟上時測試會紅，而不是安靜地寫入空白。
+PROCEDURE_LABEL = {
+    'hemorrhoidectomy': 'Hemorrhoidectomy',
+    'laser_hemorrhoidoplasty': 'Laser hemorrhoidoplasty',
+}
+SUBTYPE_LABEL = {
+    'open': 'Open（傷口不縫合）',
+    'closed': 'Closed（Ferguson，傷口完全縫合）',
+    'semi_open': 'Semi-open（部分縫合，中央開放）',
+    'semi_closed': 'Semi-closed（大部分縫合，末端開放）',
+}
+ANESTHESIA_LABEL = {
+    'IVGA': 'IVGA（靜脈全身麻醉）',
+    'LMGA': 'LMGA（喉罩全身麻醉）',
+    'SA': 'SA（脊椎麻醉）',
+    'LA': 'LA（局部麻醉）',
+}
+ENERGY_LABEL = {
+    'ligasure': 'LigaSure',
+    'powerseal': 'Powerseal',
+    'harmonic': 'Harmonic',
+}
+STATUS_LABEL = {
+    'active': '追蹤中',
+    'completed': '已完成',
+    'withdrawn': '已退出',
+}
+
+
+def _label(mapping, code):
+    """查不到就原值送出，讓沒對到的代碼在 CRF 上看得見，而不是變成空白。"""
+    if code is None or code == '':
+        return None
+    return mapping.get(code, code)
+
+
+def _energy(devices):
+    if not devices:
+        return '無'
+    return '、'.join(_label(ENERGY_LABEL, d) for d in devices)
+
+
 def _is_date_column(name):
     return '日期' in name or '時間' in name
 
@@ -140,3 +187,143 @@ def upsert_sheet(ws, header_row, key_cols, records, auto_map):
             ws.cell(row=row, column=idx[name]).value = fn(rec)
         written += 1
     return written
+
+
+def build_context(backup):
+    """把備份攤平成每個分頁要的記錄。跨表資料先併好，欄位 lambda 裡不再查表。"""
+    by_id = {p['study_id']: p for p in backup.get('patients', [])
+             if not p['study_id'].startswith(TEST_PREFIX)}
+    adh = {a['study_id']: a for a in backup.get('adherence_summary', [])}
+    surg = {s['study_id']: s for s in backup.get('surgical_records', [])}
+    surveys = {s['study_id']: s for s in backup.get('usability_surveys', [])}
+
+    reports = [r for r in backup.get('symptom_reports', []) if r['study_id'] in by_id]
+    alerts = [a for a in backup.get('alerts', []) if a['study_id'] in by_id]
+    hcu = [h for h in backup.get('healthcare_utilization', []) if h['study_id'] in by_id]
+    chats = [c for c in backup.get('ai_chat_logs', []) if c.get('study_id') in by_id]
+
+    def count(rows, sid):
+        return sum(1 for r in rows if r.get('study_id') == sid)
+
+    def pod_of(sid, when):
+        surgery = norm_date(by_id[sid].get('surgery_date'))
+        when = norm_date(when)
+        if not surgery or not when:
+            return None
+        return (date.fromisoformat(when) - date.fromisoformat(surgery)).days
+
+    overview = []
+    for seq, (sid, p) in enumerate(
+            sorted(by_id.items(), key=lambda kv: norm_date(kv[1].get('created_at')) or ''),
+            start=1):
+        overview.append({
+            'seq': seq, 'study_id': sid, 'patient': p,
+            'adherence': adh.get(sid, {}), 'surgical': surg.get(sid, {}),
+            'survey': surveys.get(sid),
+            'n_reports': count(reports, sid),
+            'n_alerts': count(alerts, sid),
+            'n_unacked': sum(1 for a in alerts
+                             if a['study_id'] == sid and not a.get('acknowledged')),
+            'n_chats': count(chats, sid),
+        })
+
+    return {
+        'overview': overview,
+        'reports': reports,
+        'alerts': [dict(a, _pod=pod_of(a['study_id'], a.get('triggered_at'))) for a in alerts],
+        'hcu': hcu,
+        'closed': [o for o in overview
+                   if o['patient'].get('study_status') in ('completed', 'withdrawn')],
+    }
+
+
+# 一個欄位是不是自動欄，就看它在不在這裡。手填欄（簽名、納排條件、補助費、
+# 警示處理、資料澄清）與公式欄（POD（今日）、依從率）刻意不列，腳本因此碰不到。
+SHEETS = {
+    '個案總覽': {
+        'header_row': 4, 'key': ('Study ID',), 'source': 'overview',
+        'auto': {
+            '序號': lambda r: r['seq'],
+            'Study ID': lambda r: r['study_id'],
+            '主刀醫師': lambda r: r['patient'].get('surgeon_id'),
+            '手術日期': lambda r: norm_date(r['patient'].get('surgery_date')),
+            '收案日期': lambda r: norm_date(r['patient'].get('created_at')),
+            '實際回報數': lambda r: r['n_reports'],
+            '應回報數': lambda r: r['adherence'].get('expected_reports'),
+            'AI 衛教使用次數': lambda r: r['n_chats'],
+            '警示總數': lambda r: r['n_alerts'],
+            '未確認警示': lambda r: r['n_unacked'],
+            '可用性問卷': lambda r: '已完成' if r['survey'] else '未完成',
+            '收案狀態': lambda r: _label(STATUS_LABEL, r['patient'].get('study_status')),
+        },
+    },
+    '表單一_收案登記': {
+        'header_row': 4, 'key': ('Study ID',), 'source': 'overview',
+        'auto': {
+            'Study ID': lambda r: r['study_id'],
+            '收案日期': lambda r: norm_date(r['patient'].get('created_at')),
+            '痔瘡分級': lambda r: r['surgical'].get('hemorrhoid_grade'),
+            '手術日期': lambda r: norm_date(r['patient'].get('surgery_date')),
+            '術式': lambda r: _label(PROCEDURE_LABEL, r['surgical'].get('procedure_type')),
+            '縫合方式': lambda r: _label(SUBTYPE_LABEL, r['surgical'].get('hemorrhoidectomy_subtype')),
+            '能量器械': lambda r: _energy(r['surgical'].get('energy_device')),
+            '麻醉方式': lambda r: _label(ANESTHESIA_LABEL, r['surgical'].get('anesthesia_type')),
+            '主刀醫師': lambda r: r['patient'].get('surgeon_id'),
+            '同意書簽署日': lambda r: norm_date(r['patient'].get('consent_date')),
+            # patients 有這一列就代表註冊完成。不讀 app_activated：那個欄位有 DEFAULT
+            # 沒有寫入端，全部受試者都是 false，拿它判定會整欄填成「否」。
+            'App 註冊完成': lambda r: '是',
+        },
+    },
+    '表單二_每日症狀回報': {
+        'header_row': 5, 'key': ('Study ID', '回報日期'), 'source': 'reports',
+        'auto': {
+            'Study ID': lambda r: r['study_id'],
+            '回報日期': lambda r: norm_date(r.get('report_date')),
+            'POD': lambda r: r.get('pod'),
+            '疼痛 NRS': lambda r: r.get('pain_nrs'),
+            '出血程度': lambda r: r.get('bleeding'),
+            '排便狀況': lambda r: r.get('bowel'),
+            '肛門控制': lambda r: r.get('continence'),
+            '發燒': lambda r: '是（體溫 ≥ 38°C）' if r.get('fever') else '否',
+            '排尿狀況': lambda r: r.get('urinary'),
+            # wound 是逗號分隔字串，不是陣列（schemaContract.formatWound 靠 split(',')）。
+            # 既有手填列也是「異物感,腫脹」這個格式，原值寫入。
+            '傷口狀況（可複選）': lambda r: r.get('wound'),
+            '資料來源': lambda r: r.get('report_source'),
+        },
+    },
+    '表單三_警示處理紀錄': {
+        'header_row': 4, 'key': ('Study ID', '警示日期'), 'source': 'alerts',
+        'auto': {
+            'Study ID': lambda r: r['study_id'],
+            '警示日期': lambda r: norm_date(r.get('triggered_at')),
+            'POD': lambda r: r.get('_pod'),
+            '警示類型': lambda r: r.get('alert_type'),
+            '警示等級': lambda r: r.get('alert_level'),
+        },
+    },
+    '表單四_醫療利用紀錄': {
+        'header_row': 4, 'key': ('Study ID', '就醫日期'), 'source': 'hcu',
+        'auto': {
+            'Study ID': lambda r: r['study_id'],
+            '就醫日期': lambda r: norm_date(r.get('event_date')),
+            'POD': lambda r: r.get('pod_at_event'),
+            '就醫類型': lambda r: r.get('event_type'),
+            '就醫原因': lambda r: r.get('reason'),
+        },
+    },
+    '表單六_結案退出': {
+        'header_row': 4, 'key': ('Study ID',), 'source': 'closed',
+        'auto': {
+            'Study ID': lambda r: r['study_id'],
+            '結案狀態': lambda r: _label(STATUS_LABEL, r['patient'].get('study_status')),
+            '結案/退出日期': lambda r: norm_date(r['patient'].get('completed_at')),
+            'POD': lambda r: r['adherence'].get('max_pod'),
+            '總回報次數': lambda r: r['n_reports'],
+            '預期次數': lambda r: r['adherence'].get('expected_reports'),
+            'AI 衛教使用次數': lambda r: r['n_chats'],
+            '可用性問卷': lambda r: '已完成' if r['survey'] else '未完成',
+        },
+    },
+}

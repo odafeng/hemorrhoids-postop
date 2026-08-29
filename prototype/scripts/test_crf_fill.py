@@ -8,6 +8,7 @@
 import json
 import os
 import pathlib
+import re
 import tempfile
 import unittest
 from datetime import date, datetime
@@ -181,6 +182,118 @@ class TestUpsert(unittest.TestCase):
             crf_fill.upsert_sheet(ws, 5, self.KEY, [
                 {'study_id': 'AAA-001', 'report_date': '2026-08-09', 'pain_nrs': 1},
             ], {**self.AUTO, '不存在的欄位': lambda r: 1})
+
+
+class TestSheetMapping(unittest.TestCase):
+    """自動欄與手填欄的界線就是這支腳本的整個安全性論證，所以直接測它。"""
+
+    FORMULA_COLUMNS = {
+        '個案總覽': ['POD（今日）', '依從率'],
+        '表單六_結案退出': ['依從率'],
+    }
+    MANUAL_COLUMNS = {
+        '個案總覽': ['備註'],
+        '表單一_收案登記': ['年齡', '性別', 'BMI', '納入條件全符合', '排除條件皆無',
+                            '補助費 NT$300', '研究人員簽名', '備註'],
+        '表單二_每日症狀回報': ['備註'],
+        '表單三_警示處理紀錄': ['處理方式', '處理結果', '是否為假陽性', '處理人員', '處理日期'],
+        '表單四_醫療利用紀錄': ['處置內容', '記錄人員', '記錄日期'],
+        '表單六_結案退出': ['退出原因', '備註', '研究人員簽名'],
+    }
+
+    def test_no_manual_column_is_ever_automated(self):
+        for sheet, manual in self.MANUAL_COLUMNS.items():
+            auto = set(crf_fill.SHEETS[sheet]['auto'])
+            self.assertEqual(auto & set(manual), set(), f'{sheet} 把手填欄列成自動欄')
+
+    def test_formula_columns_are_never_written(self):
+        for sheet, formulas in self.FORMULA_COLUMNS.items():
+            auto = set(crf_fill.SHEETS[sheet]['auto'])
+            self.assertEqual(auto & set(formulas), set(),
+                             f'{sheet} 會把公式覆寫成靜態值')
+
+    def test_資料澄清註記_is_not_touched_at_all(self):
+        self.assertNotIn('資料澄清註記', crf_fill.SHEETS)
+
+    def test_app_registration_does_not_read_app_activated(self):
+        """app_activated 有 DEFAULT 但沒有寫入端，全體受試者都是 false。
+        拿它判定「App 註冊完成」會整欄填成「否」而且沒有一端報錯。"""
+        src = pathlib.Path(crf_fill.__file__).read_text(encoding='utf-8')
+        self.assertNotIn("get('app_activated')", src)
+
+    def test_every_source_key_exists_in_context(self):
+        ctx = crf_fill.build_context(_MINIMAL_BACKUP)
+        for name, spec in crf_fill.SHEETS.items():
+            self.assertIn(spec['source'], ctx, f'{name} 的 source 不在 context 裡')
+
+    def test_adherence_comes_from_the_view_not_a_recount(self):
+        """應回報數的單一定義是 fn_report_days()，v_adherence_summary 已經在用它。
+        腳本自己重算就會出現三方不一致。"""
+        ctx = crf_fill.build_context(_MINIMAL_BACKUP)
+        rec = ctx['overview'][0]
+        self.assertEqual(crf_fill.SHEETS['個案總覽']['auto']['應回報數'](rec), 9)
+        # 實際回報數是真的數 symptom_reports，兩者不該相等
+        self.assertEqual(crf_fill.SHEETS['個案總覽']['auto']['實際回報數'](rec), 1)
+
+
+class TestSurgicalCodeCoverage(unittest.TestCase):
+    """代碼標籤是 SurgicalRecord.jsx 的第二份副本。App 加了新選項而這裡沒跟上時，
+    _label 會原值送出、CRF 上出現一個 raw code；這組測試讓它在那之前就轉紅。"""
+
+    JSX = (pathlib.Path(crf_fill.__file__).resolve().parents[1]
+           / 'src' / 'pages' / 'SurgicalRecord.jsx')
+
+    def _codes_in(self, block_name):
+        src = self.JSX.read_text(encoding='utf-8')
+        start = src.index(f'const {block_name} = [')
+        block = src[start:src.index('];', start)]
+        return set(re.findall(r"\{\s*v:\s*'([^']+)'", block))
+
+    def test_subtype_labels_cover_every_app_option(self):
+        self.assertEqual(self._codes_in('HEM_SUBTYPES'), set(crf_fill.SUBTYPE_LABEL))
+
+    def test_anesthesia_labels_cover_every_app_option(self):
+        self.assertEqual(self._codes_in('ANESTHESIA_TYPES'), set(crf_fill.ANESTHESIA_LABEL))
+
+    def test_energy_labels_cover_every_app_option(self):
+        self.assertEqual(self._codes_in('ENERGY_DEVICES'), set(crf_fill.ENERGY_LABEL))
+
+    def test_procedure_types_match_the_app(self):
+        src = self.JSX.read_text(encoding='utf-8')
+        for code in crf_fill.PROCEDURE_LABEL:
+            self.assertIn(f"setProcedureType('{code}')", src)
+
+    def test_no_energy_device_reads_as_none_not_blank(self):
+        self.assertEqual(crf_fill._energy([]), '無')
+        self.assertEqual(crf_fill._energy(None), '無')
+        self.assertEqual(crf_fill._energy(['ligasure']), 'LigaSure')
+
+    def test_unmapped_code_survives_instead_of_vanishing(self):
+        self.assertEqual(crf_fill._label(crf_fill.SUBTYPE_LABEL, 'brand_new'), 'brand_new')
+
+
+_MINIMAL_BACKUP = {
+    'patients': [{
+        'study_id': 'AAA-001', 'surgery_date': '2026-08-01',
+        'created_at': '2026-07-31T02:00:00+00:00',
+        'consent_date': '2026-07-31T02:00:00+00:00',
+        'surgeon_id': 'AAA', 'study_status': 'active',
+    }],
+    'surgical_records': [{
+        'study_id': 'AAA-001', 'procedure_type': 'hemorrhoidectomy',
+        'hemorrhoidectomy_subtype': 'closed', 'hemorrhoid_grade': 'III',
+        'anesthesia_type': 'LMGA', 'energy_device': [],
+    }],
+    'symptom_reports': [{
+        'study_id': 'AAA-001', 'report_date': '2026-08-01', 'pod': 0,
+        'pain_nrs': 3, 'bleeding': '少量', 'bowel': '未排', 'fever': False,
+        'urinary': '正常', 'continence': '正常', 'wound': '異物感,腫脹',
+        'report_source': 'app',
+    }],
+    'alerts': [], 'ai_chat_logs': [], 'usability_surveys': [],
+    'healthcare_utilization': [],
+    'adherence_summary': [{'study_id': 'AAA-001', 'expected_reports': 9, 'max_pod': 0}],
+}
 
 
 if __name__ == '__main__':
