@@ -64,4 +64,20 @@ describe('supabaseService read-failure reporting', () => {
     expect(context.type).toBeTruthy();
     expect(context.component).toBe('getAllAlertsForResearcher');
   });
+
+  // The CRF is filled from the full backup. A reader that swallows its error
+  // into [] makes "this table is empty" and "this read failed" produce the
+  // same backup file, and the forms come out silently short.
+  it.each([
+    'getAllSurgicalRecordsForResearcher',
+    'getAllSurveysForResearcher',
+    'getAllUtilizationForResearcher',
+  ])('%s rejects and tags the failure with its component', async (fnName) => {
+    const sb = await import('../supabaseService');
+    await expect(sb[fnName]()).rejects.toBeDefined();
+
+    const [, context] = logError.mock.calls[0];
+    expect(context.type).toBeTruthy();
+    expect(context.component).toBe(fnName);
+  });
 });

@@ -811,6 +811,53 @@ export async function getAllChatsForResearcher() {
   return data || [];
 }
 
+// The three readers below feed the full backup, which is what crf_fill.py reads to
+// fill the CRF workbook. They throw rather than return [] for the reason spelled out
+// in getAllAlertsForResearcher: a swallowed error and an empty table produce the same
+// backup file, and the forms then come out short with nothing to show it happened.
+
+export async function getAllSurgicalRecordsForResearcher() {
+  const { data, error } = await supabase
+    .from('surgical_records')
+    .select('*')
+    .order('study_id', { ascending: true });
+  // RLS here is researcher_read_own_surgeon: a non-PI account reads only its own
+  // surgeon's rows and gets no error for the rest. crf_fill.py checks coverage
+  // against patients before it writes anything.
+  if (error) {
+    console.error('[getAllSurgicalRecordsForResearcher]', error.message);
+    logError(error, { type: 'supabase_read', component: 'getAllSurgicalRecordsForResearcher' });
+    throw error;
+  }
+  return data || [];
+}
+
+export async function getAllSurveysForResearcher() {
+  const { data, error } = await supabase
+    .from('usability_surveys')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) {
+    console.error('[getAllSurveysForResearcher]', error.message);
+    logError(error, { type: 'supabase_read', component: 'getAllSurveysForResearcher' });
+    throw error;
+  }
+  return data || [];
+}
+
+export async function getAllUtilizationForResearcher() {
+  const { data, error } = await supabase
+    .from('healthcare_utilization')
+    .select('*')
+    .order('event_date', { ascending: false });
+  if (error) {
+    console.error('[getAllUtilizationForResearcher]', error.message);
+    logError(error, { type: 'supabase_read', component: 'getAllUtilizationForResearcher' });
+    throw error;
+  }
+  return data || [];
+}
+
 export async function reviewChat(chatId, result, notes, reviewedBy) {
   const { error } = await supabase
     .from('ai_chat_logs')
