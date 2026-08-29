@@ -271,6 +271,19 @@ class TestSurgicalCodeCoverage(unittest.TestCase):
     def test_unmapped_code_survives_instead_of_vanishing(self):
         self.assertEqual(crf_fill._label(crf_fill.SUBTYPE_LABEL, 'brand_new'), 'brand_new')
 
+    def test_alert_type_labels_cover_every_display_title(self):
+        """警示類型的標籤與 src/utils/hooks.js 的 ALERT_DISPLAY 是同一份東西的兩份副本。
+        DB 存代碼（blood_clot），CRF 既有手填列寫的是標題（出血伴隨血塊）。"""
+        hooks = (pathlib.Path(crf_fill.__file__).resolve().parents[1]
+                 / 'src' / 'utils' / 'hooks.js').read_text(encoding='utf-8')
+        start = hooks.index('const ALERT_DISPLAY = {')
+        block = hooks[start:hooks.index('\n};', start)]
+        for code, label in crf_fill.ALERT_TYPE_LABEL.items():
+            self.assertIn(code, block, f'{code} 不在 ALERT_DISPLAY 裡')
+            self.assertIn(f"title: '{label}'", block, f'{code} 的標題與 App 不一致')
+        app_codes = set(re.findall(r'^\s{2}(\w+):\s*\{', block, re.M))
+        self.assertEqual(app_codes, set(crf_fill.ALERT_TYPE_LABEL))
+
 
 _MINIMAL_BACKUP = {
     'patients': [{
@@ -294,6 +307,90 @@ _MINIMAL_BACKUP = {
     'healthcare_utilization': [],
     'adherence_summary': [{'study_id': 'AAA-001', 'expected_reports': 9, 'max_pod': 0}],
 }
+
+
+class TestRun(unittest.TestCase):
+    def _workbook(self, path):
+        """最小工作簿：每個分頁只有標題列，欄位取自 SHEETS 再加一欄手填備註。"""
+        wb = openpyxl.Workbook()
+        wb.remove(wb.active)
+        for name, spec in crf_fill.SHEETS.items():
+            ws = wb.create_sheet(name)
+            cols = list(dict.fromkeys(list(spec['key']) + list(spec['auto']) + ['備註']))
+            for col, header in enumerate(cols, start=1):
+                ws.cell(row=spec['header_row'], column=col).value = header
+        wb.save(path)
+
+    def test_aborts_and_writes_nothing_when_coverage_incomplete(self):
+        with tempfile.TemporaryDirectory() as d:
+            crf = pathlib.Path(d) / '個案報告表_CRF紀錄.xlsx'
+            self._workbook(crf)
+            before = crf.read_bytes()
+            backup = dict(_MINIMAL_BACKUP, surgical_records=[])
+
+            with self.assertRaises(crf_fill.CrfError) as cm:
+                crf_fill.run(backup, crf)
+
+            self.assertIn('AAA-001', str(cm.exception))
+            self.assertEqual(crf.read_bytes(), before)
+            # 中止就該完全沒有副作用，連快照都不留
+            self.assertEqual(list(pathlib.Path(d).glob('*.bak-*.xlsx')), [])
+
+    def test_fills_sheets_and_snapshots_first(self):
+        with tempfile.TemporaryDirectory() as d:
+            crf = pathlib.Path(d) / '個案報告表_CRF紀錄.xlsx'
+            self._workbook(crf)
+            crf_fill.run(_MINIMAL_BACKUP, crf)
+
+            self.assertEqual(len(list(pathlib.Path(d).glob('*.bak-*.xlsx'))), 1)
+            wb = openpyxl.load_workbook(crf)
+
+            ws = wb['表單一_收案登記']
+            idx = crf_fill.header_map(ws, 4)
+            self.assertEqual(ws.cell(row=5, column=idx['Study ID']).value, 'AAA-001')
+            self.assertEqual(ws.cell(row=5, column=idx['App 註冊完成']).value, '是')
+            self.assertEqual(ws.cell(row=5, column=idx['縫合方式']).value,
+                             'Closed（Ferguson，傷口完全縫合）')
+            self.assertEqual(ws.cell(row=5, column=idx['能量器械']).value, '無')
+
+            ws2 = wb['表單二_每日症狀回報']
+            idx2 = crf_fill.header_map(ws2, 5)
+            self.assertEqual(ws2.cell(row=6, column=idx2['發燒']).value, '否')
+            self.assertEqual(ws2.cell(row=6, column=idx2['傷口狀況（可複選）']).value, '異物感,腫脹')
+
+    def test_active_patient_is_not_written_to_the_closeout_sheet(self):
+        with tempfile.TemporaryDirectory() as d:
+            crf = pathlib.Path(d) / '個案報告表_CRF紀錄.xlsx'
+            self._workbook(crf)
+            crf_fill.run(_MINIMAL_BACKUP, crf)
+            ws = openpyxl.load_workbook(crf)['表單六_結案退出']
+            self.assertIsNone(ws.cell(row=5, column=1).value)
+
+    def test_rerun_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as d:
+            crf = pathlib.Path(d) / '個案報告表_CRF紀錄.xlsx'
+            self._workbook(crf)
+            crf_fill.run(_MINIMAL_BACKUP, crf)
+            crf_fill.run(_MINIMAL_BACKUP, crf)
+            ws = openpyxl.load_workbook(crf)['表單二_每日症狀回報']
+            idx = crf_fill.header_map(ws, 5)
+            self.assertIsNone(ws.cell(row=7, column=idx['Study ID']).value)
+
+    def test_hand_entered_note_survives_a_real_run(self):
+        with tempfile.TemporaryDirectory() as d:
+            crf = pathlib.Path(d) / '個案報告表_CRF紀錄.xlsx'
+            self._workbook(crf)
+            crf_fill.run(_MINIMAL_BACKUP, crf)
+
+            wb = openpyxl.load_workbook(crf)
+            ws = wb['表單二_每日症狀回報']
+            idx = crf_fill.header_map(ws, 5)
+            ws.cell(row=6, column=idx['備註']).value = '主持人判讀：傷口分泌物'
+            wb.save(crf)
+
+            crf_fill.run(_MINIMAL_BACKUP, crf)
+            ws = openpyxl.load_workbook(crf)['表單二_每日症狀回報']
+            self.assertEqual(ws.cell(row=6, column=idx['備註']).value, '主持人判讀：傷口分泌物')
 
 
 if __name__ == '__main__':

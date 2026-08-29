@@ -115,6 +115,24 @@ STATUS_LABEL = {
     'completed': '已完成',
     'withdrawn': '已退出',
 }
+# 與 src/utils/hooks.js 的 ALERT_DISPLAY 標題一致，也與 CRF 既有手填列一致。
+ALERT_TYPE_LABEL = {
+    'high_pain': '持續性高度疼痛',
+    'ascending_pain': '疼痛逐日上升',
+    'persistent_bleeding': '持續性出血',
+    'blood_clot': '出血伴隨血塊',
+    'no_bowel': '超過3天未排便',
+    'fever': '發燒',
+    'urinary_retention': '完全尿不出來',
+    'urinary_difficulty': '排尿困難',
+    'incontinence': '肛門失禁',
+    'soiling': '持續滲便',
+}
+ALERT_LEVEL_LABEL = {
+    'danger': '危險（danger）',
+    'warning': '警告（warning）',
+    'info': '提示（info）',
+}
 
 
 def _label(mapping, code):
@@ -299,8 +317,8 @@ SHEETS = {
             'Study ID': lambda r: r['study_id'],
             '警示日期': lambda r: norm_date(r.get('triggered_at')),
             'POD': lambda r: r.get('_pod'),
-            '警示類型': lambda r: r.get('alert_type'),
-            '警示等級': lambda r: r.get('alert_level'),
+            '警示類型': lambda r: _label(ALERT_TYPE_LABEL, r.get('alert_type')),
+            '警示等級': lambda r: _label(ALERT_LEVEL_LABEL, r.get('alert_level')),
         },
     },
     '表單四_醫療利用紀錄': {
@@ -327,3 +345,44 @@ SHEETS = {
         },
     },
 }
+
+
+def run(backup, crf_path=CRF_PATH):
+    """填入自動欄。中止時完全沒有副作用，包含不留快照。"""
+    missing = check_coverage(backup)
+    if missing:
+        raise CrfError(
+            '這幾例沒有手術記錄，已中止，未寫入任何內容：\n'
+            f'  {"、".join(missing)}\n'
+            'surgical_records 的 RLS 只讓研究人員看到自己主刀的列。若備份不是用 PI 帳號\n'
+            '下載的，請改用 PI 帳號重新下載；若確實是主刀醫師還沒登錄，請先補登手術記錄。'
+        )
+
+    snapshot = backup_workbook(crf_path)
+    ctx = build_context(backup)
+    wb = openpyxl.load_workbook(crf_path)
+    summary = []
+    for name, spec in SHEETS.items():
+        if name not in wb.sheetnames:
+            raise CrfError(f'工作簿裡沒有分頁「{name}」')
+        n = upsert_sheet(wb[name], spec['header_row'], spec['key'],
+                         ctx[spec['source']], spec['auto'])
+        summary.append(f'  {name}：{n} 列')
+    wb.save(crf_path)
+    return snapshot, summary
+
+
+def main(argv):
+    try:
+        backup = load_backup(argv[1] if len(argv) > 1 else None)
+        snapshot, summary = run(backup)
+    except CrfError as err:
+        print(f'中止：{err}', file=sys.stderr)
+        return 1
+    print(f'快照：{snapshot.name}')
+    print('\n'.join(summary))
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv))
