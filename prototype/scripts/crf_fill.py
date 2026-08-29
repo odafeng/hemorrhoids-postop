@@ -12,6 +12,10 @@
     /usr/local/bin/python3 crf_fill.py [full_backup_YYYY-MM-DD.json]
 
 不給路徑時取 ~/Downloads 裡最新的一份。這支腳本不連資料庫，也不需要金鑰。
+
+備份要從電腦的瀏覽器下載：Dashboard 平常是在手機上看的，而手機按下「完整備份」
+檔案會進手機的「檔案」App，不會出現在 Mac 的 ~/Downloads。手機下載後 AirDrop
+到 Mac 也可以，AirDrop 收到的檔案預設就落在 ~/Downloads。
 """
 import json
 import shutil
@@ -54,7 +58,10 @@ def load_backup(path=None, search_dir=None):
     if not candidates:
         raise CrfError(
             f'在 {search_dir} 找不到 full_backup_*.json。\n'
-            '請先到研究人員 Dashboard 按「完整備份」下載一份。'
+            '請以 PI 帳號在「電腦的瀏覽器」開研究人員 Dashboard，按「完整備份」下載一份。\n'
+            '手機按下載會存進手機的「檔案」App，不會出現在這裡；'
+            '若已經下載到手機，AirDrop 到 Mac 即可（預設也是落在 ~/Downloads）。\n'
+            f'檔案在別的位置時直接給路徑：{Path(__file__).name} /path/to/full_backup.json'
         )
     return json.loads(candidates[0].read_text(encoding='utf-8'))
 
