@@ -858,6 +858,37 @@ export async function getAllUtilizationForResearcher() {
   return data || [];
 }
 
+/**
+ * Record one healthcare-utilisation event (clinic, ED, readmission, phone advice).
+ *
+ * healthcare_utilization had a table, RLS policies and a reader but no write path
+ * of any kind, so every visit since enrolment opened lived only in the roster's
+ * free-text remarks column. `podAtEvent` is computed by the caller from the
+ * surgery date rather than typed, so it cannot drift from the symptom reports.
+ */
+export async function addUtilization({ studyId, eventType, eventDate, reason, podAtEvent }) {
+  const { error } = await supabase.from('healthcare_utilization').insert({
+    study_id: studyId,
+    event_type: eventType,
+    event_date: eventDate,
+    pod_at_event: podAtEvent,
+    reason,
+  });
+  if (error) {
+    console.error('[addUtilization]', error.message);
+    throw error;
+  }
+  // Audit trail, best-effort — same treatment as acknowledgeAlert.
+  try {
+    await supabase.from('audit_trail').insert({
+      actor_role: 'researcher',
+      action: 'utilization.add',
+      resource: 'healthcare_utilization',
+      resource_id: studyId,
+    });
+  } catch { /* best-effort */ }
+}
+
 export async function reviewChat(chatId, result, notes, reviewedBy) {
   const { error } = await supabase
     .from('ai_chat_logs')
