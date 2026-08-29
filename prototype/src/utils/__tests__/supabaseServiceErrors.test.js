@@ -21,7 +21,7 @@ const READ_FAILURE = {
 // whole thing resolves to an error, like a failed read.
 function failingQuery() {
   const q = {};
-  for (const m of ['select', 'eq', 'order', 'limit']) q[m] = vi.fn(() => q);
+  for (const m of ['select', 'eq', 'order', 'limit', 'insert']) q[m] = vi.fn(() => q);
   q.then = (resolve) => resolve({ data: null, error: READ_FAILURE });
   return q;
 }
@@ -63,5 +63,32 @@ describe('supabaseService read-failure reporting', () => {
     const [, context] = logError.mock.calls[0];
     expect(context.type).toBeTruthy();
     expect(context.component).toBe('getAllAlertsForResearcher');
+  });
+
+  // The CRF is filled from the full backup. A reader that swallows its error
+  // into [] makes "this table is empty" and "this read failed" produce the
+  // same backup file, and the forms come out silently short.
+  it.each([
+    'getAllSurgicalRecordsForResearcher',
+    'getAllSurveysForResearcher',
+    'getAllUtilizationForResearcher',
+  ])('%s rejects and tags the failure with its component', async (fnName) => {
+    const sb = await import('../supabaseService');
+    await expect(sb[fnName]()).rejects.toBeDefined();
+
+    const [, context] = logError.mock.calls[0];
+    expect(context.type).toBeTruthy();
+    expect(context.component).toBe(fnName);
+  });
+
+  // A failed utilisation write must reach the researcher who typed it. There is
+  // no second chance: the ED visit is not in any other table, and nobody goes
+  // back to check that the row landed.
+  it('addUtilization rejects when the insert fails', async () => {
+    const sb = await import('../supabaseService');
+    await expect(sb.addUtilization({
+      studyId: 'TEST-001', eventType: '急診', eventDate: '2026-08-11',
+      reason: 'x', podAtEvent: 6,
+    })).rejects.toBeDefined();
   });
 });

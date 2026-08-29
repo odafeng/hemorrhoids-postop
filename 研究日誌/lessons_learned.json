@@ -700,6 +700,11 @@
           "date": "2026-08-28",
           "what": "PI 問「對照表還有誰的 PII 沒對齊」。依此教訓先跑 patients ↔ pii_patients 的 left join，而不是逐列讀對照表",
           "outcome": "有效，且推翻了問題本身的預設。對照表內八列全部對齊，缺的是 FIH-002/003 兩位連對照表都沒登錄的個案（延遲 1–2 天）。當日稍晚同一查詢再抓到 HSF-006（延遲數小時）。三次都是人工那半漏掉，自動那半（patients）從未漏"
+        },
+        {
+          "date": "2026-08-29",
+          "what": "CRF 工作簿與 DB 的落差盤點",
+          "outcome": "11 例對應：表單一 1 列、表單二 8 列（DB 同一例 13 筆）、表單四 0 列、表單六 0 列（已有一例結案七天）。人工那半漏得比預期更徹底。處置不是要求更勤快地抄，而是取消雙寫：DB 為準，腳本填自動欄，紙本只留簽名、納排條件與臨床判讀。記入 ADR 0002。"
         }
       ]
     },
@@ -783,6 +788,11 @@
           "date": "2026-08-28",
           "what": "做結案規則前先數 POD 計算的拷貝數，含 repo 外的 ~/.hemorrhoids-daily/daily_summary.py",
           "outcome": "數到四份：check-adherence/schedule.ts 的 podFor()、supabaseService.js 的 getPODFromDate()、ResearcherDashboard.jsx 的 inline 算式、daily_summary.py。因此 L1 改為「把既有 podFor 上移到 _shared/」而非新寫一份，L5 把儀表板那份換成既有 helper（順帶修掉它沒歸零時分、可能多算一天的問題）"
+        },
+        {
+          "date": "2026-08-29",
+          "what": "設計 crf_fill.py 時清點「同一份規則有幾份拷貝」",
+          "outcome": "應回報數的規則有 fn_report_days() 與前端 isReportDay() 兩份，腳本改為直接取 v_adherence_summary，不寫第三份。反過來，代碼→標籤的對照無法避免第二份（Python 讀不到 JS），因此改為以測試釘住：SUBTYPE/ANESTHESIA/ENERGY 對 SurgicalRecord.jsx、ALERT_TYPE 對 hooks.js 的 ALERT_DISPLAY，App 新增選項而腳本沒跟上時測試會紅。"
         }
       ]
     },
@@ -888,7 +898,13 @@
         "欄位宣告了 NOT NULL DEFAULT，但 grep 不到任何 UPDATE 或 INSERT 帶它",
         "某個狀態機只有初始狀態被寫過，其餘狀態只出現在 WHERE 子句裡"
       ],
-      "used_on": null,
+      "used_on": [
+        {
+          "date": "2026-08-29",
+          "what": "對「有沒有漏填」這個問題，不看哪些欄位是 NULL，直接 grep 每個欄位的寫入端",
+          "outcome": "一次查出兩個新案例：patients 的 age/sex/bmi（grep bmi 只命中 submit 的子字串，11 例全 NULL，而 v_adherence_summary 還在 select 它們），以及 healthcare_utilization（有表、有兩條 RLS policy、有 getUtilization()，但零 insert、讀取函式零呼叫端）。若照「看資料」的方式查，前者會被當成「還沒填」、後者會被當成「還沒發生就醫事件」。本則預告的「該用一次盤點掃過全部有 DEFAULT 的欄位」仍未做，這是第五、六次。"
+        }
+      ],
       "related": {
         "lessons": [
           "LL-2026-08-14-03"
@@ -989,6 +1005,66 @@
           "2026-08-29.yaml#findings-2"
         ]
       }
+    },
+    {
+      "id": "LL-2026-08-29-03",
+      "title": "設計新元件前先查既有實作，尤其是自己沒寫過的那半邊",
+      "date_learned": "2026-08-29",
+      "status": "resolved",
+      "severity": "low",
+      "domains": [
+        "process",
+        "design"
+      ],
+      "context": "CRF 決定改以 DB 匯出為準之後，開始設計匯出器。",
+      "symptom": "設計已經進行到欄位權責邊界與資料流兩節，PI 才指出「研究人員 Dashboard 不是有全量匯出功能嗎，不要重複造輪子」。查證屬實：ResearcherDashboard.jsx:283 handleFullBackup 早已用 downloadJSON 匯出四張表。",
+      "root_cause": {
+        "statement": "我從「需要什麼」直接跳到「怎麼做」，中間漏掉「已經有什麼」。這個 repo 我讀得最熟的是 Edge Function 與 schema，研究人員 Dashboard 的匯出區塊從未動過，於是它在我的心智模型裡不存在。不熟的區塊正是最需要先 grep 的區塊。"
+      },
+      "resolution": {
+        "approach": "改為擴充既有的 handleFullBackup（4 張表 → 8 張），腳本只吃它產出的 JSON。",
+        "cost": "零。反而省掉第二條資料存取路徑、一份金鑰，以及一次 RLS 的重新實作。"
+      },
+      "principle": {
+        "statement": "動手設計前先 grep 一次目標功能的關鍵字（這裡是 export、download、backup），成本是一次 grep，省下的是整段被丟掉的設計。愈是自己沒寫過的區塊，愈不能靠印象判斷它有沒有。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "正在設計的東西，功能描述與某個既有畫面上的按鈕高度相似",
+        "設計文件寫到一半才第一次打開要整合的那個檔案",
+        "對某個模組能說出「應該沒有這個功能」但說不出是哪一行證實的"
+      ],
+      "used_on": null
+    },
+    {
+      "id": "LL-2026-08-29-04",
+      "title": "「重跑一次值不變」證明不了不會錯位，要讓列序改變才驗得到",
+      "date_learned": "2026-08-29",
+      "status": "resolved",
+      "severity": "medium",
+      "domains": [
+        "testing",
+        "data-integrity"
+      ],
+      "context": "crf_fill.py 就地更新 CRF 工作簿，自動欄每次覆寫、手填欄不得觸碰。手填欄裡有主持人的假陽性判讀與資料澄清註記，接錯列等於把判讀掛到別人身上。",
+      "symptom": "第一版的保護測試是「寫入、手填一段備註、再寫入一次、備註仍在」。該測試對「靠列號對位」的實作同樣會通過——只要資料筆數與順序不變，列號與鍵給出的答案完全相同。",
+      "root_cause": {
+        "statement": "錯位只在列序改變時發生，而「重跑同一份資料」剛好是列序唯一不會變的情況。測試挑了最不可能出錯的輸入。"
+      },
+      "resolution": {
+        "approach": "加一個測試：先寫入 08-11 那筆並手填備註，再送入 08-09 與 08-11 兩筆，讓 08-09 插進前面。斷言備註仍在 08-11 那列、08-09 那列的備註為空。以 mutation 驗證有效性：把鍵查詢換成列號走訪，6 個 upsert 測試轉紅 2 個。",
+        "cost": "無"
+      },
+      "principle": {
+        "statement": "要驗「A 不會被 B 影響」，輸入必須真的讓 B 動起來。冪等測試驗的是冪等，不是對位正確。寫完保護測試後問一句：能想像一個錯誤實作也通過它嗎？想得出來就補一個讓它失敗的案例，並用 mutation 確認補對了。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "保護測試的前後兩次輸入完全相同",
+        "測試名稱有「不變」「保留」但輸入沒有任何擾動",
+        "說得出實作用了什麼對位鍵，但測試從未讓那個鍵與列號分岔"
+      ],
+      "used_on": null
     }
   ],
   "open_items": [
@@ -1023,6 +1099,65 @@
       "action": "n 增加後重看可用性問卷的分布；若仍觸頂，改報中位數與全距，並以自由文字為主要可用性證據",
       "owner": "unassigned",
       "priority": "low"
+    },
+    {
+      "lesson_id": "LL-2026-08-14-03",
+      "action": "FIH-003 補登 surgical_records。其餘 10 例皆有，僅此一例缺；crf_fill.py 的涵蓋率檢查會因此中止且不寫檔。",
+      "owner": "主刀醫師（FIH）",
+      "blocks": "crf_fill.py 對真實 CRF 的第一次完整執行",
+      "priority": "high",
+      "note": "手術日 2026-08-28。由 App 的手術記錄頁登錄，researcher_insert_own_surgeon policy 允許主刀醫師自行寫入。"
+    },
+    {
+      "lesson_id": "LL-2026-08-14-03",
+      "action": "前端部署綠燈後，以 PI 帳號從研究人員 Dashboard 下載完整備份，執行 cd prototype/scripts && /usr/local/bin/python3 crf_fill.py，核對六個分頁列數與手填欄是否完好。",
+      "owner": "PI",
+      "blocks": "CRF 追平 DB",
+      "priority": "high",
+      "note": "必須是 PI 帳號：surgical_records 的 researcher_read_own_surgeon 會讓其他研究人員下載到的備份少列。涵蓋率檢查擋得住，但會直接中止。前置條件是上一項 FIH-003 已補登。"
+    },
+    {
+      "lesson_id": "LL-2026-08-14-03",
+      "action": "補述 WCC-002 於 2026-08-11 那次重返急診的就醫原因。目前 reason 欄寫的是「重返急診（來源：收案對照表備註；就醫原因未記載，待 PI 補述）」。",
+      "owner": "PI",
+      "priority": "medium",
+      "note": "2026-08-29 由 MCP 補登，POD 6。收案對照表備註只記了「重返急診」四個字，無原因細節。這是目前 healthcare_utilization 唯一一列。"
+    },
+    {
+      "lesson_id": "LL-2026-08-28-02",
+      "action": "回溯補登全體受試者的年齡、性別、BMI。三欄自收案起從未被寫入過，patients 全為 NULL，CRF 表單一對應三格亦空白。",
+      "owner": "PI",
+      "blocks": "Table 1 的基線人口學；依從率分析的共變項",
+      "priority": "medium",
+      "note": "2026-08-29 決定收案結束後處理。在那之前 v_adherence_summary 的 age / sex / surgery_type 三欄也是空的。無寫入端，需由 SQL 直接補；欄位已存在，不需要 DDL。"
+    },
+    {
+      "lesson_id": "LL-2026-08-28-02",
+      "action": "一次盤點 schema 中所有帶 DEFAULT 的欄位，逐一確認有無寫入端。",
+      "owner": "unassigned",
+      "priority": "medium",
+      "note": "同型問題已出現六次：app_activated 兩處讀取端、study_status、ENROLLED 顯示、age/sex/bmi、healthcare_utilization（有表有讀取函式無 insert，且讀取函式零呼叫端）。逐個踩到的成本已明顯高於一次全面盤點。本則 lesson 於 2026-08-28 就預告過這件事。"
+    },
+    {
+      "lesson_id": "LL-2026-08-14-03",
+      "action": "更新收案對照表的收案狀態欄：HSF-001 應為「已完成」（2026-08-22 結案）、HSF-006 仍停在「已簽同意書」、HSF-003/004/005 仍空白。",
+      "owner": "PI",
+      "priority": "low",
+      "note": "2026-08-29 的 CRF 工作只處理 CRF 這一側，對照表未動。改動前先備份成 收案對照表.bak-YYYYMMDD.xlsx，寫值後要 copy 前一列的 _style。"
+    },
+    {
+      "lesson_id": "LL-2026-08-28-02",
+      "action": "收案結束後決定 alerts 是否新增處理方式／處理結果／是否為假陽性／處理人員四欄，把紙本的臨床判讀併入資料庫。",
+      "owner": "unassigned",
+      "priority": "low",
+      "note": "屬 DDL，收案期間不做。目前這四欄只存在於 CRF 表單三與資料澄清註記分頁。"
+    },
+    {
+      "lesson_id": "LL-2026-08-23-01",
+      "action": "getAllChatsForResearcher() 的 200 列上限：超過後完整備份的 ai_chat_logs 會截斷，CRF 的「AI 衛教使用次數」開始少算且不會報錯。",
+      "owner": "unassigned",
+      "priority": "low",
+      "note": "2026-08-29 時 19 列，無影響。該上限本是為 chat review 佇列設的，備份沿用同一個函式才連帶受限。"
     }
   ],
   "backlog_note": "2026-08-12 以前的每日 YAML 亦各自帶有 lesson 欄位（含 08-05 的寄信分層、08-12 上午的測試帳號污染統計、身分對應漏登）。尚未萃取進本檔，可另行補齊。"

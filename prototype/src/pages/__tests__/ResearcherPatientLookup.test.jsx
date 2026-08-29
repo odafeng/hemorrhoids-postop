@@ -12,6 +12,7 @@ vi.mock('../../utils/supabaseService', () => ({
   getPODFromDate: vi.fn(() => 2),
   getSignedSignatureUrl: vi.fn(),
   adminResetPassword: vi.fn(),
+  addUtilization: vi.fn(),
 }));
 import * as sb from '../../utils/supabaseService';
 
@@ -74,5 +75,50 @@ describe('ResearcherPatientLookup — 逐日明細', () => {
     );
     await waitFor(() => expect(screen.getByText(/POD 2 · 2026-07-26/)).toBeInTheDocument());
     expect(sb.getPatient).toHaveBeenCalledWith('HSF-001');
+  });
+});
+
+describe('ResearcherPatientLookup — 登錄就醫事件', () => {
+  beforeEach(() => {
+    sb.getPatient.mockResolvedValue({ study_id: 'HSF-001', study_status: 'active', surgery_date: '2026-07-24' });
+    sb.getAlerts.mockResolvedValue([]);
+    sb.getAllReports.mockResolvedValue(TWO_REPORTS);
+    sb.addUtilization.mockResolvedValue(undefined);
+  });
+
+  it('POD 由就醫日期與手術日期算出，不讓人手填', async () => {
+    await lookup();
+    await waitFor(() => expect(screen.getByText('登錄就醫事件')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText('就醫類型'), { target: { value: '急診' } });
+    fireEvent.change(screen.getByPlaceholderText('就醫日期'), { target: { value: '2026-07-30' } });
+    fireEvent.change(screen.getByPlaceholderText(/就醫原因/), { target: { value: '術後出血' } });
+    fireEvent.click(screen.getByRole('button', { name: '登錄' }));
+
+    await waitFor(() => expect(sb.addUtilization).toHaveBeenCalledWith({
+      studyId: 'HSF-001', eventType: '急診', eventDate: '2026-07-30',
+      reason: '術後出血', podAtEvent: 6,
+    }));
+  });
+
+  it('日期或原因沒填時按鈕不可按', async () => {
+    await lookup();
+    await waitFor(() => expect(screen.getByText('登錄就醫事件')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: '登錄' })).toBeDisabled();
+
+    fireEvent.change(screen.getByPlaceholderText('就醫日期'), { target: { value: '2026-07-30' } });
+    expect(screen.getByRole('button', { name: '登錄' })).toBeDisabled();
+  });
+
+  it('寫入失敗時把錯誤顯示出來，不要無聲', async () => {
+    sb.addUtilization.mockRejectedValue(new Error('permission denied'));
+    await lookup();
+    await waitFor(() => expect(screen.getByText('登錄就醫事件')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByPlaceholderText('就醫日期'), { target: { value: '2026-07-30' } });
+    fireEvent.change(screen.getByPlaceholderText(/就醫原因/), { target: { value: '術後出血' } });
+    fireEvent.click(screen.getByRole('button', { name: '登錄' }));
+
+    await waitFor(() => expect(screen.getByText(/permission denied/)).toBeInTheDocument());
   });
 });

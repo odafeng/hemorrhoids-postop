@@ -168,3 +168,151 @@ deliberately_not_done:
     但該查詢會隨收案數持續成長
   - 未處理已確認警示的長期歸檔（例如超過 N 天後只留在 CSV）。
     本次只改呈現，資料一列未動
+
+# ────────────────────────────────────────────────────────────────
+# 第二段（同日稍晚）：PI 問「目前有沒有漏掉什麼資料沒有填」
+# ────────────────────────────────────────────────────────────────
+
+session_2:
+  objective: >
+    PI 問資料有沒有漏填。三邊對帳（production DB、收案對照表、CRF 工作簿）
+    查出 CRF 幾乎沒有跟上，以及三個「有欄位沒有寫入端」的洞。
+    PI 定案 CRF 改以 DB 匯出為準，當日完成整條路徑。
+
+  findings:
+    - id: 6
+      severity: high
+      issue: 年齡、性別、BMI 三欄從收案至今從未被寫入過任何一次
+      detail: >
+        patients 有這三個欄位，11 例全為 NULL。CRF 表單一_收案登記 的對應三格
+        也全部空白（該表只有 1 列有資料）。整個 prototype/ grep 不到 bmi，
+        唯一命中的是 submit 這個字裡的子字串。沒有任何介面收集，
+        也沒有任何程式碼寫入。
+        v_adherence_summary 這個分析用 view 還 select 了 age、sex、surgery_type，
+        三欄全空。
+      consequence: >
+        Table 1 的基線人口學缺件，依從率分析也少了最可能的共變項。
+        收案已 38 天、11 例，全部要靠病歷回溯補登。
+      pattern: >
+        與 app_activated（兩處讀取端）、study_status、ENROLLED 顯示同型：
+        欄位存在、下游有人讀、就是沒有寫入端。這是第五次。
+
+    - id: 7
+      severity: high
+      issue: healthcare_utilization 有表、有 RLS、有讀取函式，就是沒有任何寫入端
+      detail: >
+        base_schema 建了表與 researcher_read_utilization / pi_manage_utilization
+        兩條 policy，supabaseService 也寫好了 getUtilization(studyId)，
+        但該函式的呼叫端數為零，整個 codebase 沒有一處 insert。
+        全表 0 列。目前唯一一筆已知就醫事件只存在於收案對照表備註欄的自由文字。
+      consequence: >
+        醫療利用是次要 outcome。事件是時間點資料，事後回溯要逐例翻病歷，
+        而門診／急診／再住院分散在不同系統。
+
+    - id: 8
+      severity: medium
+      issue: CRF 工作簿與 DB 的落差已經大到無法靠人工追平
+      detail: >
+        11 例受試者對應：表單一 1 列、個案總覽 1 列（且停在「實際 8／應 9」的舊值）、
+        表單二 8 列（同一例 DB 裡有 13 筆）、表單三 3 列（處理結果多半空白）、
+        表單四 0 列、表單六 0 列——即使 HSF-001 已於 2026-08-22 結案。
+      consequence: >
+        雙寫必然漂移，而漂移不會有任何一端報錯。與 2026-08-14 漏掉三例
+        pii_patients 是同一個形狀。
+
+    - id: 9
+      severity: medium
+      issue: surgical_records 的 RLS 讓非 PI 帳號下載的備份靜默少列
+      detail: >
+        researcher_read_own_surgeon 只讓研究人員讀到自己主刀的列，
+        其餘不報錯、單純不在結果裡。只有 PI 的 pi_manage_surgical 是 FOR ALL。
+      consequence: >
+        用非 PI 帳號產生的備份填 CRF，缺的那幾列在表單上就是空白，
+        看不出是漏抓還是本來沒有。
+
+    - id: 10
+      severity: low
+      issue: FIH-003 沒有 surgical_records
+      detail: 其餘 10 例都有。手術日 2026-08-28，登錄於 08-27。
+      consequence: crf_fill.py 的涵蓋率檢查會因此中止，需主刀醫師補登後才能完整執行。
+
+  hypotheses_ruled_out:
+    - hypothesis: CRF 需要另外寫一支匯出器，自己連 Supabase 取數
+      disproved_by: >
+        PI 指出研究人員 Dashboard 早有「完整備份」功能
+        （ResearcherDashboard.jsx:283，downloadJSON，涵蓋 4 張表）。
+        改成擴充既有備份、腳本只吃那份 JSON，省掉第二條資料存取路徑與一份金鑰。
+        這是本次唯一一個「先查既有實作」就能避免的設計錯誤，而我沒有先查。
+
+    - hypothesis: symptom_reports.wound 是陣列，寫進 CRF 要先 join
+      disproved_by: >
+        schemaContract.formatWound 用 split(',')，DB 存的是逗號分隔字串。
+        CRF 既有手填列也是「異物感,腫脹」這個格式。原值寫入即可。
+        surgical_records.energy_device 才是真的 ARRAY。
+
+    - hypothesis: DB 值可以直接寫進 CRF，不需要代碼對照
+      disproved_by: >
+        surgical_records 存 hemorrhoidectomy / closed / ligasure / LMGA，
+        alerts 存 blood_clot / danger。CRF 的「選項清單」分頁與既有手填列
+        用的都是人看的標籤（出血伴隨血塊、危險（danger））。
+        兩組對照分別釘住 SurgicalRecord.jsx 與 hooks.js 的 ALERT_DISPLAY。
+
+    - hypothesis: 手填欄不被覆寫，只要「重跑一次值不變」的測試就足以證明
+      disproved_by: >
+        靠列號對位的實作也能通過該測試。只有在插入一筆較早日期、
+        使列序改變時才會現形（備註接到別人身上）。
+        以 mutation 驗證：把鍵查詢換成列號走訪，6 個 upsert 測試轉紅 2 個。
+
+  decisions:
+    - id: D3
+      decision: CRF 改以 DB 匯出為準，紙本只留無法自動生成的欄位
+      rationale: >
+        雙寫會漂移且不報錯。自動欄由腳本每次覆寫，手填欄腳本永不觸碰；
+        某欄是不是自動欄，看它在不在 SHEETS[...]['auto'] 裡。
+      recorded_in: docs/adr/0002-crf-derived-from-db-export.md
+
+    - id: D4
+      decision: 腳本吃 Dashboard 的完整備份 JSON，不自己連資料庫
+      rationale: >
+        資料存取維持單一路徑，不新增金鑰，不繞過 RLS。
+        代價是備份必須由 PI 帳號下載，以涵蓋率檢查兜住。
+
+    - id: D5
+      decision: 年齡／性別／BMI 本次維持手填，收案結束後回溯補登
+      rationale: PI 判斷靜態資料事後補齊即可，不值得在收案期間動 production 寫入路徑。
+
+    - id: D6
+      decision: alerts 的處理方式／處理結果／是否為假陽性／處理人員維持紙本
+      rationale: >
+        這四欄在 schema 裡不存在，加欄位屬 DDL，收案期間不做。
+        判讀理由續寫在 CRF 的資料澄清註記分頁。
+
+    - id: D7
+      decision: 涵蓋率不足時整支中止，不寫檔也不留快照
+      rationale: >
+        半填的 CRF 比沒填的 CRF 更危險：空白格看不出是漏抓還是本來沒有。
+        中止訊息直接列出缺哪幾例，並說明可能是備份帳號不對或手術記錄未登錄。
+
+  verification:
+    - 三邊對帳以 SQL 逐欄比對 patients / pii_patients，11 例 PII 對齊無缺
+    - crf_fill 36 個單元測試通過（/usr/local/bin/python3，系統 3.9.6 無 openpyxl）
+    - mutation 驗證：upsert 改為列號對位 → 6 個測試轉紅 2 個，還原後全綠
+    - SHEETS 的欄名對真實工作簿逐一比對：六個分頁零缺欄，
+      且「不會被寫的欄位」正好等於宣告的手填欄加公式欄
+    - 對真實工作簿的副本實跑：表單二 13 列（原 8 列），POD 7 與 POD 9 的
+      資料澄清備註仍在各自的列；表單三的假陽性判讀長文仍掛在 2026-08-02 那列；
+      個案總覽的 POD（今日）與依從率三列抽查仍是公式；表單一的年齡與 BMI 仍為空
+    - 前端 463 個測試通過、lint 乾淨、build 成功
+    - WCC-002 的重返急診已補登，healthcare_utilization 從 0 列變 1 列
+
+  deliberately_not_done:
+    - 對真實 CRF 的完整實跑。FIH-003 缺手術記錄會觸發涵蓋率中止，
+      且前端尚未部署、PI 還無法下載含 8 張表的備份
+    - 年齡／性別／BMI 的回溯補登（見 D5）
+    - v_adherence_summary 仍 select 著 age / sex / surgery_type 三個空欄，未清理。
+      屬 2026-08-28 就列出的死欄位盤點任務
+    - getAllChatsForResearcher() 的 200 列上限未動。目前 19 列無影響，
+      但備份裡的 AI 使用次數會在超過 200 列後開始少算
+    - CRF 填寫未接進每日排程，維持手動執行
+    - 收案對照表的收案狀態欄未更新（HSF-001 應為已完成、HSF-006 仍寫已簽同意書、
+      HSF-003/004/005 仍空白），本次只處理 CRF 這一側

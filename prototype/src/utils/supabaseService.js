@@ -811,6 +811,84 @@ export async function getAllChatsForResearcher() {
   return data || [];
 }
 
+// The three readers below feed the full backup, which is what crf_fill.py reads to
+// fill the CRF workbook. They throw rather than return [] for the reason spelled out
+// in getAllAlertsForResearcher: a swallowed error and an empty table produce the same
+// backup file, and the forms then come out short with nothing to show it happened.
+
+export async function getAllSurgicalRecordsForResearcher() {
+  const { data, error } = await supabase
+    .from('surgical_records')
+    .select('*')
+    .order('study_id', { ascending: true });
+  // RLS here is researcher_read_own_surgeon: a non-PI account reads only its own
+  // surgeon's rows and gets no error for the rest. crf_fill.py checks coverage
+  // against patients before it writes anything.
+  if (error) {
+    console.error('[getAllSurgicalRecordsForResearcher]', error.message);
+    logError(error, { type: 'supabase_read', component: 'getAllSurgicalRecordsForResearcher' });
+    throw error;
+  }
+  return data || [];
+}
+
+export async function getAllSurveysForResearcher() {
+  const { data, error } = await supabase
+    .from('usability_surveys')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) {
+    console.error('[getAllSurveysForResearcher]', error.message);
+    logError(error, { type: 'supabase_read', component: 'getAllSurveysForResearcher' });
+    throw error;
+  }
+  return data || [];
+}
+
+export async function getAllUtilizationForResearcher() {
+  const { data, error } = await supabase
+    .from('healthcare_utilization')
+    .select('*')
+    .order('event_date', { ascending: false });
+  if (error) {
+    console.error('[getAllUtilizationForResearcher]', error.message);
+    logError(error, { type: 'supabase_read', component: 'getAllUtilizationForResearcher' });
+    throw error;
+  }
+  return data || [];
+}
+
+/**
+ * Record one healthcare-utilisation event (clinic, ED, readmission, phone advice).
+ *
+ * healthcare_utilization had a table, RLS policies and a reader but no write path
+ * of any kind, so every visit since enrolment opened lived only in the roster's
+ * free-text remarks column. `podAtEvent` is computed by the caller from the
+ * surgery date rather than typed, so it cannot drift from the symptom reports.
+ */
+export async function addUtilization({ studyId, eventType, eventDate, reason, podAtEvent }) {
+  const { error } = await supabase.from('healthcare_utilization').insert({
+    study_id: studyId,
+    event_type: eventType,
+    event_date: eventDate,
+    pod_at_event: podAtEvent,
+    reason,
+  });
+  if (error) {
+    console.error('[addUtilization]', error.message);
+    throw error;
+  }
+  // Audit trail, best-effort — same treatment as acknowledgeAlert.
+  try {
+    await supabase.from('audit_trail').insert({
+      actor_role: 'researcher',
+      action: 'utilization.add',
+      resource: 'healthcare_utilization',
+      resource_id: studyId,
+    });
+  } catch { /* best-effort */ }
+}
+
 export async function reviewChat(chatId, result, notes, reviewedBy) {
   const { error } = await supabase
     .from('ai_chat_logs')

@@ -18,6 +18,13 @@ export default function ResearcherPatientLookup({ onNavigate, isDemo }) {
   const [resetMsg, setResetMsg] = useState('');
   const [showResetPwd, setShowResetPwd] = useState(false);
 
+  // Healthcare-utilisation entry state
+  const [hcuType, setHcuType] = useState('門診');
+  const [hcuDate, setHcuDate] = useState('');
+  const [hcuReason, setHcuReason] = useState('');
+  const [hcuSaving, setHcuSaving] = useState(false);
+  const [hcuMsg, setHcuMsg] = useState('');
+
   // Signature viewing state
   const [sigUrl, setSigUrl] = useState(null);
   const [sigLoading, setSigLoading] = useState(false);
@@ -338,6 +345,77 @@ export default function ResearcherPatientLookup({ onNavigate, isDemo }) {
             </>
           )}
         </>
+      )}
+
+      {!isDemo && result?.patient && (
+        <div className="card" style={{ marginTop: 18 }}>
+          <div className="card-head">
+            <div className="card-head-left">
+              <div className="card-icon"><I.Clipboard width={14} height={14} /></div>
+              <div>
+                <div className="card-kicker">Data Entry</div>
+                <div className="card-title">登錄就醫事件</div>
+              </div>
+            </div>
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 12, lineHeight: 1.55 }}>
+            門診、急診、再住院與電話諮詢都在這裡登錄。POD 由就醫日期自動算出。
+          </p>
+          <div className="input-group">
+            <label className="input-lbl" htmlFor="hcu-type">就醫類型</label>
+            <select id="hcu-type" className="input" aria-label="就醫類型"
+              value={hcuType} onChange={e => setHcuType(e.target.value)}>
+              <option value="門診">門診</option>
+              <option value="急診">急診</option>
+              <option value="再住院">再住院</option>
+              <option value="電話諮詢">電話諮詢</option>
+            </select>
+          </div>
+          <div className="input-group">
+            <label className="input-lbl" htmlFor="hcu-date">就醫日期</label>
+            <input id="hcu-date" className="input" type="date" placeholder="就醫日期"
+              value={hcuDate} onChange={e => setHcuDate(e.target.value)} />
+          </div>
+          <div className="input-group">
+            <label className="input-lbl" htmlFor="hcu-reason">就醫原因</label>
+            <input id="hcu-reason" className="input" type="text" placeholder="就醫原因（例：術後出血）"
+              value={hcuReason} onChange={e => setHcuReason(e.target.value)} />
+          </div>
+          <button className="btn btn-primary"
+            disabled={hcuSaving || !hcuDate || !hcuReason.trim()}
+            onClick={async () => {
+              setHcuSaving(true); setHcuMsg('');
+              try {
+                // Derived, never typed: a hand-entered POD drifts from the one
+                // on the symptom reports and the two stop lining up.
+                const pod = Math.floor(
+                  (Date.parse(`${hcuDate}T00:00:00Z`)
+                    - Date.parse(`${result.patient.surgery_date}T00:00:00Z`)) / 86400000
+                );
+                await sb.addUtilization({
+                  studyId: result.studyId, eventType: hcuType,
+                  eventDate: hcuDate, reason: hcuReason.trim(), podAtEvent: pod,
+                });
+                setHcuMsg(`✓ 已登錄（POD ${pod}）`);
+                setHcuDate(''); setHcuReason('');
+              } catch (err) {
+                setHcuMsg('✗ ' + (err.message || '登錄失敗'));
+              } finally {
+                setHcuSaving(false);
+              }
+            }}>
+            {hcuSaving ? '處理中…' : '登錄'}
+          </button>
+          {hcuMsg && (
+            <div style={{
+              marginTop: 10, fontSize: 12, textAlign: 'center',
+              color: hcuMsg.startsWith('✓') ? 'var(--ok)' : 'var(--danger)',
+              fontFamily: 'var(--font-mono)',
+            }}>
+              {hcuMsg}
+            </div>
+          )}
+        </div>
       )}
 
       {!isDemo && (
