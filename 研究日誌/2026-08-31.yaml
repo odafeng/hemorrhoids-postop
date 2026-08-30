@@ -1,0 +1,156 @@
+date: 2026-08-31
+weekday: 一
+phase: 收案執行
+day: 40        # 自 2026-07-23 首例收案起算
+objective: >
+  PI 要求檢視已填的可用性問卷。08-23 記錄時 n=2，現為 n=4，結構化題項仍然觸頂，
+  沒有新資訊。有新資訊的是第四位填答者的自由文字，內容指向 AI 衛教回答不夠完整。
+  循此線索比對 ai_chat_logs，查出兩件比問卷分數本身重要的事：
+  四位填答者裡三位從未使用過 AI 對話功能，以及 Edge Function 的病人脈絡參數
+  在 production 沒有任何呼叫端會傳。
+  未改動 production，本日純為分析與紀錄。
+
+# 註：本檔位於公開 repo，只記錄機制層級資訊。
+# 受試者姓名、病歷號、聯絡方式與加密金鑰一律不寫入，僅以 Study ID 指涉。
+# 病人自由文字一律改寫為機制描述，不逐字引用。
+
+trigger:
+  summary: >
+    PI 要求檢視受試者填寫的可用性問卷。
+  event_time: 2026-08-30T17:31:00Z   # 台灣時間 2026-08-31 01:31
+
+findings:
+  - id: 1
+    severity: low
+    issue: 可用性問卷 n 由 2 增至 4，觸頂效應未改變
+    detail: >
+      usability_surveys 共 4 筆：HSF-001（pod 14）、WCC-001（pod 14）、
+      HSF-002（pod 15）、WCC-002（pod 20）。五題李克特 1–5 共 20 格，
+      其中 19 格為 5。唯一的 4 分是 HSF-002 的 usefulness
+      （題目為「這個系統對我的術後恢復有幫助」）。
+      中位數 5、IQR 0。
+    consequence: >
+      08-23 在 n=2 時做出的判斷（結構化題項零鑑別力、證據在自由文字欄）
+      在 n=4 仍然成立。lessons_learned.json 的 open_item
+      「n 增加後重看可用性問卷的分布」本日執行完畢，結論不變。
+      工具為自訂五題量表，非 SUS 或 UMUX-Lite，撰稿時不宜以 usability 一詞承載。
+
+  - id: 2
+    severity: medium
+    issue: 問卷題目寫「這個系統」，但四位填答者裡三位從未使用過 AI 對話功能
+    detail: >
+      比對 ai_chat_logs（排除 TEST-001，全study 共 18 輪）：
+      WCC-002 11 輪、FIH-001 5 輪、HSF-006 2 輪。
+      HSF-001、WCC-001、HSF-002 各 0 輪。
+      亦即三位給滿分者評的是每日症狀回報與靜態衛教內容，不含 AI 衛教；
+      唯一實際使用過 AI 對話的填答者（WCC-002）留下的是負面自由文字。
+    consequence: >
+      「這個系統對我的術後恢復有幫助」這一題在受試者之間的操作定義不一致。
+      要用問卷支持 AI 衛教的效用主張，必須先依 ai_chat_logs 分層為
+      用過／沒用過；n=4 分層後有效樣本僅 1，無法支持任何主張。
+      這是分母錯置，不是樣本數不足——再多受試者也不會自動修正題目語意。
+
+  - id: 3
+    severity: medium
+    issue: ai-chat Edge Function 讀取 recentSymptoms，但 production 沒有任何呼叫端會傳
+    detail: >
+      supabase/functions/ai-chat/index.ts:114 解構 { question, recentSymptoms, history }，
+      127–128 行在 recentSymptoms 存在時把去識別化症狀摘要附加到 user message。
+      唯一的 production 呼叫端 src/pages/AIChat.jsx:70 只傳
+      { conversationHistory: history }，從不傳 recentSymptoms。
+      grep 全 repo，recentSymptoms 僅出現於 claudeService.js（參數定義）
+      與 claudeService.test.js（單元測試自行傳入）。
+      實測後果可在對話紀錄直接看到：WCC-002 於 2026-08-19 問是否還需要溫水坐浴，
+      模型回覆的第一句是反問術後第幾天，病人於 26 秒後手動補答「剛好 2 週」。
+      術後天數是系統本來就有的資料。
+    consequence: >
+      這是 LL-2026-08-28-02「有 DEFAULT、有讀取端、沒有寫入端」的鏡像版本：
+      讀取端在 Edge Function、寫入端在前端呼叫，兩者分屬不同部署路徑，
+      而單元測試自行構造參數，因此測試會綠、功能不存在。
+      病人自由文字所稱的「回答不夠完整」，機制上至少有這一項成因。
+
+  - id: 4
+    severity: low
+    issue: RAG 未命中率 22.2%，且全部集中於同一位受試者的追問型問題
+    detail: >
+      ai_chat_logs 排除 TEST-001 共 18 輪，matched_topic 為 null 者 4 輪，
+      全部屬於 WCC-002。其中三輪是承接上一輪的追問
+      （回答天數、追問特定食物、追問水果），語句本身缺乏可檢索的主題詞，
+      未命中屬預期。
+      第四輪（id 80）不同：那是一個語意完整的獨立提問，主題為術後分泌物持續時間，
+      仍然沒有任何命中。
+    consequence: >
+      rag_documents 的衛教語料可能沒有涵蓋分泌物此一主題。
+      此推論尚未驗證，可離線以該問題向 match_documents 查詢確認，不需動 production。
+
+  - id: 5
+    severity: low
+    issue: 問卷送出時刻早於該受試者最後兩輪對話，抱怨的涵蓋範圍不是全部 11 輪
+    detail: >
+      WCC-002 問卷 created_at 為 2026-08-25 18:03（台北），
+      ai_chat_logs 的 id 80、81 分別在同日 23:37 與 23:38。
+      填答當下他實際經歷的是 08-10 至 08-19 的 9 輪。
+    consequence: >
+      引用這則回饋時要標明它評的是前 9 輪。
+      另可注意：抱怨之後他當晚仍繼續使用，兩者不矛盾但不宜混為一談。
+
+hypotheses_ruled_out:
+  - hypothesis: 「回答不夠完整」是回應被 max_tokens 截斷
+    disproved_by: >
+      ai-chat/index.ts:241 設 max_tokens: 512；全study 最長回應 430 字元，
+      WCC-002 的 11 則落在 216–358 字元。
+      逐則檢查結尾，11 則全部以完整的固定收尾句作結
+      （「如有疑慮或症狀持續加劇，請聯絡您的醫療團隊」），無一則斷在句中。
+      長度集中是 system prompt 的格式產物，不是截斷。
+
+  - hypothesis: 上一則的「長度集中在 216–358」本身可以當作截斷的證據
+    disproved_by: >
+      這是我自己的驗證方法出錯，不是資料的問題。
+      最初以 left(ai_response, 220) 查看開頭，多則在 220 字處斷在半個詞上
+      （例如「培養固定排便時」「溫水坐浴方法提」），看起來極像截斷。
+      那是 SQL 自己截的。改用 right(ai_response, 60) 看結尾才排除。
+      教訓：判斷「輸出是否被截斷」時，唯一有效的觀察位置是結尾，
+      而截斷過的樣本無法用來回答這個問題。
+
+  - hypothesis: 「回答不夠完整」是模型拒答或落入 fallback 文案
+    disproved_by: >
+      11 輪全部給出實質的衛教內容，無一則出現拒答或
+      「AI 衛教暫時不可用」的錯誤文案。
+      AIChat.jsx 亦僅在 source !== 'error' 時才寫入 ai_chat_logs，
+      故錯誤回應本來就不會出現在這批資料裡——這一點使該表無法用來估計失敗率，
+      但同時也表示這 11 輪確實都是模型的真實輸出。
+
+  - hypothesis: 四位填答者的滿分代表他們對 AI 衛教評價正面
+    disproved_by: >
+      三位在 ai_chat_logs 為 0 輪，從未使用過該功能。詳見 findings id 2。
+
+deliberately_not_done:
+  - 不在收案期間把 recentSymptoms 接上 AIChat.jsx。
+    這會改變介入本身的內容，使前後兩批受試者接觸到不同版本的 AI 衛教，
+    屬 protocol deviation。列為 v2／IRB 修正案候選。
+  - 不改 system prompt 的回應長度或格式。同上，收案期間不動介入。
+  - 不改問卷題目文字。08-23 已因同一理由決定不改疼痛題文字，此處一致。
+  - 不主動催 HSF-003／004／005 填問卷。三人才剛過 POD 14 一天，尚在合理等待期。
+    FIH-001 已 POD 17 未填且症狀回報僅 6 筆，屬整體依從性問題，
+    不宜以問卷為由單獨聯繫。
+  - 不驗證 findings id 4 的語料缺口推論。可離線做，但今日未做，列入 open_questions。
+
+verification:
+  - 問卷資料以 usability_surveys 全表查詢，n=4，無 TEST-001。
+  - 對話資料以 ai_chat_logs 查詢並排除 TEST-001，n=18。
+    此表只收錄 source !== 'error' 的回合，因此涵蓋範圍是「成功的回合」，
+    不涵蓋失敗、逾時或拒答。不可用它估計 AI 服務的失敗率。
+  - 截斷假設的排除方式為逐則檢視回應結尾字元，非長度統計。
+  - recentSymptoms 未被傳遞一事，以 grep 全 repo 確認呼叫端，
+    非以執行時觀察確認。若日後有其他前端進入點，需重驗。
+  - 問卷曝光條件重新確認為 Dashboard.jsx:159 的 pod >= 14 && !surveyDone，
+    與 08-23 所記一致。
+
+open_questions:
+  - recentSymptoms 是否列入 v2 或 IRB 修正案。若列入，需一併決定
+    去識別化摘要的欄位範圍，以及是否要在同意書說明 AI 會讀取症狀資料。
+  - rag_documents 是否缺少術後分泌物主題。以 id 80 的問題離線查 match_documents 可驗。
+  - AI 對話使用率本身（11 位受試者累計 18 輪，6 位從未使用）是否構成一項主要發現。
+    若是，論文的敘事重心會從「AI 衛教有沒有用」移向「病人在什麼情況下才會問 AI」。
+  - 可用性問卷若在 n=50 仍觸頂，改報中位數與全距並以自由文字為主要證據
+    （承 08-23 open_question，本日 n=4 不足以結案）。

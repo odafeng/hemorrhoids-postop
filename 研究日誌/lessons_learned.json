@@ -830,7 +830,14 @@
         "journal": [
           "2026-08-23.yaml#findings-3"
         ]
-      }
+      },
+      "used_on": [
+        {
+          "date": "2026-08-31",
+          "context": "PI 要求檢視已回收的 4 份可用性問卷",
+          "value": "照本則的順序先讀自由文字再看分數。20 個 Likert 格子裡 19 格是 5，照分數看等於什麼都沒發生；自由文字則指出 AI 衛教回答不夠完整，循此比對 ai_chat_logs 才查出兩件事：四位填答者裡三位從未用過 AI 對話，以及 ai-chat 的 recentSymptoms 參數在 production 沒有呼叫端。兩者都不可能從結構化題項看出來。"
+        }
+      ]
     },
     {
       "id": "LL-2026-08-28-01",
@@ -903,6 +910,11 @@
           "date": "2026-08-29",
           "what": "對「有沒有漏填」這個問題，不看哪些欄位是 NULL，直接 grep 每個欄位的寫入端",
           "outcome": "一次查出兩個新案例：patients 的 age/sex/bmi（grep bmi 只命中 submit 的子字串，11 例全 NULL，而 v_adherence_summary 還在 select 它們），以及 healthcare_utilization（有表、有兩條 RLS policy、有 getUtilization()，但零 insert、讀取函式零呼叫端）。若照「看資料」的方式查，前者會被當成「還沒填」、後者會被當成「還沒發生就醫事件」。本則預告的「該用一次盤點掃過全部有 DEFAULT 的欄位」仍未做，這是第五、六次。"
+        },
+        {
+          "date": "2026-08-31",
+          "what": "追查病人所稱「AI 回答不夠完整」時，不看回應內容品質，先 grep 呼叫端",
+          "outcome": "查出 ai-chat/index.ts:114 解構 recentSymptoms、127 行組進 prompt，但唯一 production 呼叫端 AIChat.jsx:70 只傳 conversationHistory。這是本型問題的第七個實例，也是第一個跨部署單元的版本：讀取端在 Edge Function、寫入端在前端，兩者部署路徑不同，而 claudeService.test.js 自行構造 recentSymptoms 傳入，所以測試恆綠。本則預告的『一次盤點』仍未做。"
         }
       ],
       "related": {
@@ -1071,6 +1083,88 @@
         "說得出實作用了什麼對位鍵，但測試從未讓那個鍵與列號分岔"
       ],
       "used_on": null
+    },
+    {
+      "id": "LL-2026-08-31-01",
+      "title": "選用參數的讀取端與呼叫端分屬兩個部署單元時，測試自己餵參數就等於沒測",
+      "date_learned": "2026-08-31",
+      "status": "open",
+      "severity": "medium",
+      "domains": [
+        "testing",
+        "api-contract",
+        "deployment"
+      ],
+      "evidence_grade": "direct",
+      "context": "ai-chat Edge Function 接受選用的 recentSymptoms，用來把去識別化症狀摘要附進 prompt，使模型知道病人的術後天數與近期症狀。功能自設計起就在，從未運作過。",
+      "symptom": "病人在可用性問卷自由文字指出 AI 回答不夠完整。對話紀錄裡看得到具體樣態：問是否還需要溫水坐浴，模型第一句是反問術後第幾天，病人手動補答。術後天數是系統本來就有的資料。",
+      "root_cause": {
+        "statement": "選用參數缺席時，接收端的行為是合法降級而不是報錯，所以沒有任何執行期訊號。單元測試又是在接收端這一側自行構造參數，證明的是「有傳就會用」，從來不會問「實際上有沒有人傳」。讀取端與呼叫端跨越了網路邊界與兩條部署路徑（Vercel git integration 對 ci.yml 的 Edge Function job），沒有任何型別或建置期檢查跨得過去。"
+      },
+      "resolution": {
+        "approach": "收案期間不修。接上 recentSymptoms 會改變介入內容，使前後兩批受試者接觸到不同版本的 AI 衛教，屬 protocol deviation。列為 v2／IRB 修正案候選。",
+        "cost": "現有 18 輪對話全部在無病人脈絡下產生，此為既成事實，日後接上後的資料不可與之合併分析"
+      },
+      "principle": {
+        "statement": "對跨部署單元的選用參數，測試要從真正的呼叫端出發，或至少加一個斷言「production 呼叫端有傳這個欄位」。判斷一個選用參數是否活著，grep 呼叫端，不要看接收端的程式碼有沒有處理它——接收端一定處理得好好的。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "介面文件或型別上寫著選用參數，但服務端 log 從未出現該欄位",
+        "測試檔案是該參數在整個 repo 裡除定義處之外的唯一出現位置",
+        "參數缺席時的降級路徑寫得很完整，因此看起來像刻意設計而非未接上",
+        "讀取端與呼叫端分屬不同的部署流水線"
+      ],
+      "related": {
+        "lessons": [
+          "LL-2026-08-28-02"
+        ],
+        "journal": [
+          "2026-08-31.yaml#findings-3"
+        ]
+      },
+      "used_on": null
+    },
+    {
+      "id": "LL-2026-08-31-02",
+      "title": "問卷問「這個系統」，但受試者各自只用了系統的一部分",
+      "date_learned": "2026-08-31",
+      "status": "open",
+      "severity": "medium",
+      "domains": [
+        "measurement",
+        "questionnaire",
+        "outcome-definition"
+      ],
+      "evidence_grade": "direct",
+      "context": "可用性問卷五題全部以「這個系統」為主詞，其中一題為「這個系統對我的術後恢復有幫助」。系統實際包含每日症狀回報、靜態衛教內容與 AI 對話三個部分。",
+      "symptom": "四份問卷幾乎全滿分，看起來支持 AI 衛教的效用。比對 ai_chat_logs 後，四位填答者裡三位的 AI 對話輪數是 0；唯一用過的那位留下負面自由文字。",
+      "root_cause": {
+        "statement": "題目用一個整體性名詞指涉多功能介入，把「暴露量」這個變項藏了起來。受試者各自依自己接觸過的部分作答，分數因此不可比較。這不是樣本數問題——再多受試者也不會讓題目的操作定義變得一致。"
+      },
+      "resolution": {
+        "approach": "收案期間不改題目（改題會讓前後兩批受試者填不同的工具）。改在分析端處理：依 ai_chat_logs 將填答者分層為用過／未用過 AI 對話，並在論文中明載各受試者的功能暴露量。n=4 時分層後有效樣本為 1，尚不足以做任何主張。",
+        "cost": "已回收的問卷無法回溯補問暴露量，只能由使用紀錄推估"
+      },
+      "principle": {
+        "statement": "評估多功能介入時，滿意度分數要配一個暴露量分母才讀得懂。設計問卷時把題目綁到具體功能，而不是綁到「這個系統」；來不及改題目時，至少從使用紀錄把暴露量算出來再解讀分數。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "問卷題幹出現「這個系統」「本平台」「這個 App」等整體性名詞，而產品有多個可獨立使用的功能",
+        "各功能的使用紀錄顯示採用率差距很大，但問卷分數看不出對應的差異",
+        "打算用整體滿意度支持某個特定功能的效用主張",
+        "沒有任何一題問受試者實際用了哪些功能"
+      ],
+      "related": {
+        "lessons": [
+          "LL-2026-08-23-02"
+        ],
+        "journal": [
+          "2026-08-31.yaml#findings-2"
+        ]
+      },
+      "used_on": null
     }
   ],
   "open_items": [
@@ -1104,7 +1198,8 @@
       "lesson_id": "LL-2026-08-23-02",
       "action": "n 增加後重看可用性問卷的分布；若仍觸頂，改報中位數與全距，並以自由文字為主要可用性證據",
       "owner": "unassigned",
-      "priority": "low"
+      "priority": "low",
+      "note": "2026-08-31 於 n=4 執行過一次：20 格 Likert 有 19 格為 5，中位數 5、IQR 0，結論與 n=2 時相同。下次重看訂在 n≥20。"
     },
     {
       "lesson_id": "LL-2026-08-14-03",
@@ -1164,6 +1259,26 @@
       "owner": "unassigned",
       "priority": "low",
       "note": "2026-08-29 時 19 列，無影響。該上限本是為 chat review 佇列設的，備份沿用同一個函式才連帶受限。"
+    },
+    {
+      "lesson_id": "LL-2026-08-31-01",
+      "action": "決定 ai-chat 的 recentSymptoms 是否列入 v2 或 IRB 修正案。若列入，需一併決定去識別化摘要的欄位範圍，以及同意書是否需說明 AI 會讀取症狀資料。",
+      "owner": "PI",
+      "blocks": "AI 衛教回應的個人化；現行回應會反問系統已知的資訊",
+      "priority": "medium"
+    },
+    {
+      "lesson_id": "LL-2026-08-31-01",
+      "action": "以 WCC-002 於 2026-08-25 提出的分泌物問題離線查 match_documents，確認 rag_documents 是否缺少術後分泌物主題。不需動 production。",
+      "owner": "unassigned",
+      "priority": "low",
+      "note": "全study RAG 未命中 4/18，其中三則是缺主題詞的追問屬預期，此則是語意完整的獨立提問。"
+    },
+    {
+      "lesson_id": "LL-2026-08-31-02",
+      "action": "決定 AI 對話使用率（11 位受試者累計 18 輪，6 位從未使用）是否作為一項主要發現撰寫。若是，敘事重心會從「AI 衛教有沒有用」移向「病人在什麼情況下才會問 AI」。",
+      "owner": "PI",
+      "priority": "medium"
     }
   ],
   "backlog_note": "2026-08-12 以前的每日 YAML 亦各自帶有 lesson 欄位（含 08-05 的寄信分層、08-12 上午的測試帳號污染統計、身分對應漏登）。尚未萃取進本檔，可另行補齊。"
