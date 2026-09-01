@@ -1,0 +1,80 @@
+date: 2026-09-01
+weekday: 二
+phase: 收案執行
+day: 41        # 自 2026-07-23 首例收案起算
+objective: >
+  收案第 12 例（WCC-003）。查詢邀請碼、補對照表、待病人完成 App 註冊後補 pii_patients。
+  流程本身照 CLAUDE.md 既有規範走完，無新問題。
+  唯一值得記的是查 pii_patients 欄位定義時，information_schema 回傳每個欄位兩份——
+  archive_20260421 schema 下存在同名表，未加 table_schema 條件的稽核查詢會看到重影。
+  未改動 production schema，未部署。
+
+# 註：本檔位於公開 repo，只記錄機制層級資訊。
+# 受試者姓名、病歷號、聯絡方式、邀請碼與加密金鑰一律不寫入，僅以 Study ID 指涉。
+
+trigger:
+  summary: >
+    PI 詢問 WCC-003 邀請碼，隨後要求補收案對照表；病人於同日完成 App 註冊。
+  event_time: 2026-09-01T11:59:00Z   # 台灣時間 2026-09-01 19:59
+
+findings:
+  - id: 1
+    severity: medium
+    issue: pii_patients 在 public 與 archive_20260421 兩個 schema 下同名存在
+    detail: >
+      查 information_schema.columns 取 pii_patients 欄位定義時，14 個欄位各回傳兩列，
+      且兩列的 is_nullable 與 column_default 不一致（例如 enrolled_at 一份 NOT NULL
+      DEFAULT now()、一份 nullable 無 default）。初判像 schema 損壞，
+      實為 archive_20260421.pii_patients 與 public.pii_patients 同時被列出，
+      information_schema 未過濾 table_schema 時兩者混排。
+      archive_20260421 為 2026-04-21 的封存 schema。
+    consequence: >
+      實際寫入無誤——search_path 讓未限定的 INSERT/SELECT 解析到 public，
+      本次 WCC-003 寫入與先前 11 筆走的是同一張表。
+      風險在稽核查詢的可讀性：CLAUDE.md 記載的孤兒比對 SQL
+      （patients left join pii_patients）未限定 schema，
+      目前靠 search_path 正確，但任何在非預設 search_path 下執行的
+      工作階段（例如 SECURITY DEFINER 函式帶 SET search_path）會得到不同結果。
+      建議稽核類 SQL 一律寫 public. 前綴。
+
+  - id: 2
+    severity: low
+    issue: 對照表新列的 dropdown 與樣式範圍已足夠，未觸及邊界
+    detail: >
+      WCC-003 落在第 17 列（序號 12）。資料驗證範圍 G6:G55 與 M6:M55 均涵蓋，
+      dv.sqref 不需調整（距上界 55 尚有 38 列）。
+      樣式自第 16 列（HSF-006）以 copy(cell._style) 整列複製 A..N 共 14 格。
+    consequence: >
+      驗證方式：比對第 17 列與第 16 列的 _style 相等（14/14 相等），
+      並確認仍空白的第 18 列在 C/D/H 三格 _style 不相等——
+      後者反向證明「待填」樣式確實存在，樣式複製不是空操作。
+      單看第 17 列與第 16 列相等無法區分「複製成功」與「本來就相同」。
+
+hypotheses_ruled_out:
+  - hypothesis: pii_patients 的 schema 有漂移或損壞（欄位重複、約束不一致）
+    disproved_by: >
+      select table_schema from information_schema.tables where table_name='pii_patients'
+      回傳 public 與 archive_20260421 兩列。加上 table_schema='public' 條件後
+      欄位數回到 14，約束定義單一且一致。是兩張同名表，不是一張壞表。
+
+  - hypothesis: openpyxl 匯入失敗是套件安裝問題（ModuleNotFoundError 後改用 uv 仍失敗）
+    disproved_by: >
+      uv 環境下改報 "openpyxl has no attribute load_workbook (circular import)"，
+      traceback 顯示 openpyxl/compat/__init__.py 的 import inspect 解析到
+      工作目錄下自建的 inspect.py。CPython 把腳本所在目錄放在 sys.path[0]，
+      該檔名遮蔽 stdlib 的 inspect。改名後即通過。
+      錯誤訊息指向 openpyxl，真正原因在檔名——暫存腳本不要用 stdlib 模組名。
+
+changes:
+  production_schema: none
+  deployments: none
+  data:
+    - public.pii_patients 新增 WCC-003 一列（enrolled_at 取 patients.created_at，非 now()）
+    - 收案文件/收案對照表.xlsx 第 17 列（gitignored，未進版本控制）
+  備份: 收案文件/收案對照表.bak-20260901.xlsx
+
+verification:
+  - 密文長度減 66 檢核：name 9 / birth 10 / mrn 7 / phone 10 bytes，與既有 11 筆格式一致（未解密）
+  - enrolled_at = patients.created_at 為 true
+  - pii_access_log 記到 access_type=insert 且 access_reason 非 null
+  - 孤兒比對（patients left join pii_patients，排除 TEST-001）回傳 0 列
