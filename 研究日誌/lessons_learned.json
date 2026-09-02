@@ -1349,9 +1349,10 @@
     },
     {
       "lesson_id": "LL-2026-09-02-01",
-      "action": "分析階段：HSF-006 症狀軌跡以 2026-09-01 為切點分段；依從率分母與 completed_at 維持原手術日。healthcare_utilization 無 is_reoperation 欄，再手術率要以 reason 全文檢索 reoperation 統計。",
+      "action": "分析階段：HSF-006 為首例 withdrawn。兩個分析 view 寫死 study_status != 'withdrawn'，他會從依從率與非預期急診率一起消失。分析程式必須直接查 patients 與 healthcare_utilization，讓他出現在 Table 1、CONSORT flow（POD 3 因 SAE 中止）與再手術分子。再手術率以 reason 全文檢索 reoperation 統計。",
       "owner": "PI",
-      "priority": "medium"
+      "priority": "high",
+      "blocks": "次要結局的分子正確性"
     }
   ],
   "backlog_note": "2026-08-12 以前的每日 YAML 亦各自帶有 lesson 欄位（含 08-05 的寄信分層、08-12 上午的測試帳號污染統計、身分對應漏登）。尚未萃取進本檔，可另行補齊。"

@@ -5,7 +5,7 @@ day: 42        # 自 2026-07-23 首例收案起算
 objective: >
   登錄本研究第一例真正的術後併發症：HSF-006 於 POD 3 因肛周膿瘍重返急診，
   同日急診手術（I&D + drainage seton）並住院，屬 reoperation。
-  決定追蹤方式（不退出、POD 時鐘不動）。查資料時發現急診同日稍早 AI 對話
+  追蹤方式先建議「不退出」，經 PI 討論後推翻，改為研究者主動中止（退出日 2026-09-01）。查資料時發現急診同日稍早 AI 對話
   曾先給出正確的「立即回診」建議，隨後在病人一句「護士說正常」之後撤回；
   規則引擎對膿瘍相關症狀完全沒有反應。未改動 production schema，未部署。
 
@@ -91,16 +91,26 @@ findings:
       要注意病人自述天數與系統 POD 有 +1 偏移。
 
 decisions:
-  - decision: HSF-006 繼續追蹤，不填表單六，不改 study_status
+  - decision: 【已推翻，見下一則】HSF-006 繼續追蹤，不填表單六，不改 study_status
     rationale: >
-      計畫書 v2 沒有「併發症即中止」條款；表單六的「發生嚴重不良事件」是退出原因選項，
-      前提是退出，不是強制退出。次要結局（非預期急診率）與探索性結局（症狀軌跡與併發症）
-      正是要收這種事件；本例是目前 12 位受試者中唯一一例併發症。
-  - decision: POD 時鐘維持原手術日 2026-08-29，不改 patients.surgery_date
+      最初建議。理由：計畫書 v2 沒有「併發症即中止」條款；主要結局是 feasibility，
+      不依賴疼痛分數的意義；本例是目前 12 位受試者中唯一一例併發症。
+      同日 12:37 PI 提出反對，理由是 I&D 後的疼痛與排尿回報已不反映痔瘡術後恢復。
+      這個理由本身只影響探索性結局，不足以停止回報；真正決定性的理由在下一則。
+  - decision: HSF-006 研究者主動中止，study_status 改 withdrawn，退出日 2026-09-01
     rationale: >
-      回報排程、fn_report_days、close-followup 的 completed_at 全綁 surgery_date。
-      改成再手術日會讓依從率分母與結案日全部位移。分析時以 healthcare_utilization
-      的 event_date 把症狀軌跡切段即可。
+      決定性理由不是疼痛不準，而是系統範圍：AI 衛教 prompt 與 RAG 知識庫全部寫給
+      痔瘡術後恢復，沒有任何內容適用於膿瘍引流加 seton 的病人。findings-1 已示範
+      模型在脈絡不足時會把紅旗建議收回；再讓他用一個月，風險全在病人身上，
+      研究端只多收到一段不屬於痔瘡術後的軌跡。CRF 表單六本就把「發生嚴重不良事件」
+      列為退出原因，計畫設計時已預期研究者主動中止。
+      退出日取事件日 2026-09-01 而非決策日，與 ADR-0001「記真實事件時間」一致；
+      至 09-01 的四筆回報、三則警示、五輪對話、兩列醫療利用全部保留。
+      代價：兩個分析 view 寫死 study_status != 'withdrawn'，他會同時從依從率
+      （要的）與非預期急診率（不要的）消失。分析程式必須直接查表，見 follow_ups。
+  - decision: 不改 patients.surgery_date
+    rationale: >
+      退出後這欄只剩紀錄意義，仍應保留原手術日。
   - decision: 兩處紀錄同一次補齊，reason 一開始就寫全
     rationale: >
       WCC-002 那次對照表只寫「重返急診」四個字，DB 補登時原因已不可考，
@@ -131,23 +141,36 @@ changes:
   deployments: none
   data:
     - public.healthcare_utilization 新增兩列（id 2 急診、id 3 再住院），event_date 2026-09-01，pod_at_event 3
-    - public.audit_trail 新增兩列 utilization.add（actor_role pi），與前端登錄卡寫法一致
-    - 收案文件/收案對照表.xlsx 第 16 列備註欄（gitignored，未進版本控制）；收案狀態欄未動
+    - public.audit_trail 新增兩列 utilization.add 與一列 patient.withdraw（actor_role pi）
+    - public.patients HSF-006：study_status active → withdrawn，completed_at = 2026-09-01 台北日始
+      （與 close-followup 寫 HSF-001 的格式一致，UTC 存為前一日 16:00）。
+      study_status 沒有 CHECK constraint，'withdrawn' 是第一次被寫入；兩個 view 的過濾條件自此有效
+    - public.pii_patients HSF-006：withdrawn / withdrawn_at / withdrawn_reason 三欄第一次被寫入
+      （自 base_schema 起無寫入端），交易內 SET LOCAL app.access_reason 供 fn_audit_pii_change 記錄
+    - 收案文件/收案對照表.xlsx 第 16 列：收案狀態「已簽同意書」→「已退出」（下拉清單既有值），備註追加退出紀錄
   備份: 收案文件/收案對照表.bak-20260902.xlsx
 
 verification:
   - INSERT 的 RETURNING 確認兩列 id 2、3；healthcare_utilization 全表由 1 列變 3 列
+  - UPDATE 後回讀：study_status = withdrawn、completed_at 與 withdrawn_at 皆為 2026-08-31 16:00 UTC、withdrawn = true
+  - pii_access_log 十分鐘內有 HSF-006 的 update 紀錄且 access_reason 非 null
+  - v_adherence_summary 查 HSF-006 回 0 列（過濾條件生效）；active 受試者數由 11 變 10（排除 TEST-001）
   - 對照表第 16 列備註由 None 變為含診斷、術式、DB id 的字串；姓名等欄位未讀出、未列印
   - 未執行 crf_fill.py：需要 PI 帳號下載的完整備份，本次未做
 
 deliberately_not_done:
-  - 未改對照表收案狀態（仍為「已簽同意書」）。08-28 決定該欄語意為「收案階段」而非「追蹤狀態」。
+  - 未刪除或停用他的 auth 帳號。App 不讀 study_status，他仍可登入與回報；由 PI 口頭告知不必再填，
+    帳號留到收案結束一併清理。若他在 09-01 之後仍送出回報，分析時以 completed_at 截斷。
+  - 未動 alerts、symptom_reports、ai_chat_logs 任何一列。
   - 未改 prompt、未加傷口規則、未動 schema。三者皆為收案期間凍結項目。
   - 未查急診病歷。本日誌的時間順序為推論，已於 findings-1 標明。
 
 follow_ups:
-  - PI：查高榮 IRB 對與研究無關之 SAE 的通報規定
-  - 分析階段：HSF-006 症狀軌跡以 2026-09-01 切段；依從率分母不動
+  - PI：口頭告知 HSF-006 不必再回報；查高榮 IRB 對與研究無關之 SAE 的通報規定與研究者中止的資料保留條款
+  - PI：CRF 表單六手填——中途退出、發生嚴重不良事件、2026-09-01、POD 3、回報 4 次；表單四處置內容手填 I&D + drainage seton
+  - 分析階段：HSF-006 必須出現在 Table 1、CONSORT flow「POD 3 因 SAE 中止 n=1」、非預期急診與再手術的分子。
+    v_adherence_summary 與另一 view 都會濾掉 withdrawn，分析程式要直接查 patients 與 healthcare_utilization，
+    否則三個月後跑 view 會以為併發症是零
   - v2：傷口欄位規則、prompt 對「病人引用權威反證」的立場穩定性回歸測試、
     healthcare_utilization 加 is_reoperation 欄
   - 表單四「處置內容」在 crf_fill.py 為手填欄，PI 手寫「I&D + drainage seton」
