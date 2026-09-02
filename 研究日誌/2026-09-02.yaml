@@ -90,6 +90,22 @@ findings:
       AI 回覆沿用病人說的「第 4 天」。若日後把 AI 對話與 symptom_reports 依 POD 對齊，
       要注意病人自述天數與系統 POD 有 +1 偏移。
 
+  - id: 5
+    severity: medium
+    issue: crf_fill.py 填不出退出者的表單六自動欄
+    detail: >
+      表單六的 POD 與預期次數取自 r['adherence']，來源是 v_adherence_summary，
+      而該 view 寫死 study_status != 'withdrawn'。表單六正是給退出者填的表，
+      退出的那一刻這兩格就變空。表單四則不受影響（來源是 healthcare_utilization 全表）。
+      另外截至今日兩張表都還是空的：WCC-002 的急診（DB 已有）與 HSF-001 的結案
+      （2026-08-22）都沒出現在工作簿裡，08-29 記的「完整實跑未做」仍然成立。
+    consequence: >
+      本次表單六第 5 列以手填寫入，預期次數 4 為 POD 0–3 每日回報的人工計算，
+      備註欄註明來源。下次 crf_fill.py 實跑會以 Study ID upsert 同一列：
+      結案狀態／日期／回報數／對話數會被同值覆寫，POD 與預期次數會被 None 覆寫成空——
+      要先確認 upsert_sheet 對 None 是「跳過」還是「清空」，再跑。
+      修法在腳本端：adherence 改為直接查表或 view 加 withdrawn 分支；不動 production。
+
 decisions:
   - decision: 【已推翻，見下一則】HSF-006 繼續追蹤，不填表單六，不改 study_status
     rationale: >
@@ -148,7 +164,10 @@ changes:
     - public.pii_patients HSF-006：withdrawn / withdrawn_at / withdrawn_reason 三欄第一次被寫入
       （自 base_schema 起無寫入端），交易內 SET LOCAL app.access_reason 供 fn_audit_pii_change 記錄
     - 收案文件/收案對照表.xlsx 第 16 列：收案狀態「已簽同意書」→「已退出」（下拉清單既有值），備註追加退出紀錄
-  備份: 收案文件/收案對照表.bak-20260902.xlsx
+    - 收案文件/個案報告表_CRF紀錄.xlsx（gitignored）：表單四第 5–6 列（急診、再住院，處置內容手填）、
+      表單六第 5 列（已退出、2026-09-01、POD 3、SAE、4/4、對話 5、問卷未完成）。兩張表此前皆無資料列。
+      記錄人員／簽名欄留白給 PI
+  備份: 收案文件/收案對照表.bak-20260902.xlsx、收案文件/個案報告表_CRF紀錄.bak-20260902.xlsx
 
 verification:
   - INSERT 的 RETURNING 確認兩列 id 2、3；healthcare_utilization 全表由 1 列變 3 列
@@ -167,7 +186,8 @@ deliberately_not_done:
 
 follow_ups:
   - PI：口頭告知 HSF-006 不必再回報；查高榮 IRB 對與研究無關之 SAE 的通報規定與研究者中止的資料保留條款
-  - PI：CRF 表單六手填——中途退出、發生嚴重不良事件、2026-09-01、POD 3、回報 4 次；表單四處置內容手填 I&D + drainage seton
+  - PI：表單四 G 欄與表單六 L 欄簽名
+  - crf_fill.py：修 adherence 來源使退出者的表單六 POD／預期次數可自動帶入；實跑前確認 upsert 對 None 的行為（findings-5）
   - 分析階段：HSF-006 必須出現在 Table 1、CONSORT flow「POD 3 因 SAE 中止 n=1」、非預期急診與再手術的分子。
     v_adherence_summary 與另一 view 都會濾掉 withdrawn，分析程式要直接查 patients 與 healthcare_utilization，
     否則三個月後跑 view 會以為併發症是零
