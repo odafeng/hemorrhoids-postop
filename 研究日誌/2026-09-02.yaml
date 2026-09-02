@@ -106,6 +106,23 @@ findings:
       要先確認 upsert_sheet 對 None 是「跳過」還是「清空」，再跑。
       修法在腳本端：adherence 改為直接查表或 view 加 withdrawn 分支；不動 production。
 
+  - id: 6
+    severity: medium
+    issue: HSF-004 於 POD 18 回診告知手機重置、無意願重裝 App
+    detail: >
+      手術 2026-08-15。9 筆回報止於 POD 13（08-28），POD 15 起無回報；無警示、無 AI 對話、
+      POD 14 可用性問卷未填。手機重置時間落在 POD 14–18 之間，未細問。
+      本例是第一個因裝置因素停止使用的受試者。PWA 沒有 App Store 重裝路徑，
+      重回系統需要邀請碼加登入；病人端自助重設密碼在 Gmail 收件端仍不可靠（08-12 未結案），
+      即使他願意重裝也不是一步能完成的事。
+    consequence: >
+      與 HSF-006 相反，不標 withdrawn：沒有安全問題，App 內容仍適用，他停掉的是介入本身。
+      「換手機就不再回報」正是 feasibility 主要結局要量的現象，標退出會把他從依從率分母移除，
+      讓剩下的依從率虛高。CONSORT 歸類為 discontinued intervention，非 withdrew consent。
+      POD 0–7 內 ≥5 次回報的指標他已達成（POD 0、1、2、5、6、7 共 6 次）。
+      代價：check-adherence 至 2026-09-14 前每個回報日都會列他逾期，每日摘要多一行噪音；
+      POD 30 由 close-followup 自動結案，completed_at 落在 2026-09-14。
+
 decisions:
   - decision: 【已推翻，見下一則】HSF-006 繼續追蹤，不填表單六，不改 study_status
     rationale: >
@@ -127,6 +144,8 @@ decisions:
   - decision: 不改 patients.surgery_date
     rationale: >
       退出後這欄只剩紀錄意義，仍應保留原手術日。
+  - decision: HSF-004 維持 active，不填表單六退出，等 POD 30 自動結案
+    rationale: 見 findings-6。同一天兩個停止回報的個案走不同處置，差別在停止的原因是否影響資料的意義與病人安全。
   - decision: 兩處紀錄同一次補齊，reason 一開始就寫全
     rationale: >
       WCC-002 那次對照表只寫「重返急診」四個字，DB 補登時原因已不可考，
@@ -164,6 +183,8 @@ changes:
     - public.pii_patients HSF-006：withdrawn / withdrawn_at / withdrawn_reason 三欄第一次被寫入
       （自 base_schema 起無寫入端），交易內 SET LOCAL app.access_reason 供 fn_audit_pii_change 記錄
     - 收案文件/收案對照表.xlsx 第 16 列：收案狀態「已簽同意書」→「已退出」（下拉清單既有值），備註追加退出紀錄
+    - 收案文件/收案對照表.xlsx 第 12 列（HSF-004）備註：裝置重置、維持 active 的處置與理由
+    - 收案文件/個案報告表_CRF紀錄.xlsx 表單六第 6 列：預建 HSF-004 的 Study ID 與備註，其餘欄位留給結案後的 crf_fill.py upsert
     - 收案文件/個案報告表_CRF紀錄.xlsx（gitignored）：表單四第 5–6 列（急診、再住院，處置內容手填）、
       表單六第 5 列（已退出、2026-09-01、POD 3、SAE、4/4、對話 5、問卷未完成）。兩張表此前皆無資料列。
       記錄人員／簽名欄留白給 PI
@@ -187,6 +208,8 @@ deliberately_not_done:
 follow_ups:
   - PI：口頭告知 HSF-006 不必再回報；查高榮 IRB 對與研究無關之 SAE 的通報規定與研究者中止的資料保留條款
   - PI：表單四 G 欄與表單六 L 欄簽名
+  - 分析階段：HSF-004 的 POD 15–30 缺報歸因為裝置重置，非依從性；CONSORT flow 標 discontinued intervention（POD 13 後）
+  - 收案流程：考慮在回診時備一張「換手機後如何重回 App」的說明卡（邀請碼＋研究人員協助重設密碼）。n=1，先觀察是否再發生
   - crf_fill.py：修 adherence 來源使退出者的表單六 POD／預期次數可自動帶入；實跑前確認 upsert 對 None 的行為（findings-5）
   - 分析階段：HSF-006 必須出現在 Table 1、CONSORT flow「POD 3 因 SAE 中止 n=1」、非預期急診與再手術的分子。
     v_adherence_summary 與另一 view 都會濾掉 withdrawn，分析程式要直接查 patients 與 healthcare_utilization，
