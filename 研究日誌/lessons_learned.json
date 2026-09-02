@@ -705,6 +705,11 @@
           "date": "2026-08-29",
           "what": "CRF 工作簿與 DB 的落差盤點",
           "outcome": "11 例對應：表單一 1 列、表單二 8 列（DB 同一例 13 筆）、表單四 0 列、表單六 0 列（已有一例結案七天）。人工那半漏得比預期更徹底。處置不是要求更勤快地抄，而是取消雙寫：DB 為準，腳本填自動欄，紙本只留簽名、納排條件與臨床判讀。記入 ADR 0002。"
+        },
+        {
+          "date": "2026-09-02",
+          "what": "HSF-006 重返急診登錄。依此教訓把 DB（healthcare_utilization）與對照表備註兩處在同一次補齊，且 reason 一開始就寫入診斷、術式、住院",
+          "outcome": "有效。對比 WCC-002 那次對照表只寫四個字、DB 補登時原因已不可考的狀況，本次不再產生待補述的 open item"
         }
       ]
     },
@@ -1165,6 +1170,47 @@
         ]
       },
       "used_on": null
+    },
+    {
+      "id": "LL-2026-09-02-01",
+      "title": "AI 衛教先給出正確的紅旗建議，病人引用權威反證後就撤回",
+      "date_learned": "2026-09-02",
+      "status": "open",
+      "severity": "high",
+      "domains": [
+        "ai-safety",
+        "prompt",
+        "conversation"
+      ],
+      "evidence_grade": "direct",
+      "context": "HSF-006 POD 3（2026-09-01）三輪 AI 對話。第二輪病人提到異味分泌物加進行性腫脹，AI 判定可能為傷口感染，要求立即回診。第三輪病人說出院時護理師說過分泌物正常。同日病人因肛周膿瘍急診 I&D + seton 並住院。",
+      "symptom": "第三輪 AI 回覆「明白了，那麼您可以放心」，把分泌物歸為正常，回診條件降為「溫水坐浴 1–2 天未改善再提前回診」。前一輪的感染警訊整段消失。",
+      "root_cause": {
+        "statement": "模型把「分泌物本身可為正常」與「分泌物合併進行性腫脹須就醫」當成互斥，病人一提前者就放棄後者。屬 sycophancy：面對病人引用的權威（護理師），模型優先維持對話一致性而非維持臨床判斷。ai-chat 不帶 recentSymptoms（LL-2026-08-31-01）加重此問題：模型看不到 POD 3 剛回報的疼痛 6、分泌物、腫脹，只有病人自述可依據。"
+      },
+      "resolution": {
+        "approach": "收案期間不改 prompt（凍結決策）。列入 v2：system prompt 明示「病人引用的先前醫囑不取消當下的紅旗判斷」，並把本對話納入 prompt 回歸測試集；同時補 recentSymptoms。論文的 AI 安全性段落以此例為主要案例。",
+        "cost": "本例已無法補救；其餘受試者在 v2 前仍暴露於同一行為"
+      },
+      "principle": {
+        "statement": "衛教型 LLM 的紅旗建議要能在病人反駁後存活。測試集不能只有「病人描述症狀→模型是否建議就醫」，還要有「模型已建議就醫→病人給出安撫性反證→模型是否堅持」。第二種才是真實對話會發生的事。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "對話紀錄中同一 session 內建議強度由高轉低，而症狀描述沒有改善",
+        "病人訊息含「護士說」「醫生說」「出院時有交代」之類的權威引用",
+        "AI 回覆開頭為「明白了」「這樣就清楚了」「您可以放心」",
+        "prompt 測試集只有單輪案例，沒有多輪反駁案例"
+      ],
+      "related": {
+        "lessons": [
+          "LL-2026-08-31-01"
+        ],
+        "journal": [
+          "2026-09-02.yaml#findings-1"
+        ]
+      },
+      "used_on": null
     }
   ],
   "open_items": [
@@ -1277,6 +1323,33 @@
     {
       "lesson_id": "LL-2026-08-31-02",
       "action": "決定 AI 對話使用率（11 位受試者累計 18 輪，6 位從未使用）是否作為一項主要發現撰寫。若是，敘事重心會從「AI 衛教有沒有用」移向「病人在什麼情況下才會問 AI」。",
+      "owner": "PI",
+      "priority": "medium"
+    },
+    {
+      "lesson_id": "LL-2026-09-02-01",
+      "action": "v2 前建立多輪反駁測試集：模型已建議就醫 → 病人引用護理師／醫師說法安撫 → 模型是否堅持。至少收錄 HSF-006 2026-09-01 這組對話。",
+      "owner": "PI",
+      "priority": "high",
+      "blocks": "v2 prompt 變更的驗收"
+    },
+    {
+      "lesson_id": "LL-2026-09-02-01",
+      "action": "v2 規則引擎加傷口欄位規則。alert_type 目前無任何 wound 規則；HSF-006 膿瘍前驅症狀（POD 3 分泌物新出現、腫脹連續 4 天、疼痛 3→6）零警示。需動 trigger function，收案期間不做。",
+      "owner": "unassigned",
+      "priority": "high",
+      "note": "見 2026-09-02.yaml findings-2"
+    },
+    {
+      "lesson_id": "LL-2026-09-02-01",
+      "action": "查高榮 IRB 對「與研究介入無關之 SAE（住院）」的通報規定，決定 HSF-006 膿瘍是否需另行通報或僅列入期中／結案報告。",
+      "owner": "PI",
+      "priority": "high",
+      "blocks": "IRB 合規"
+    },
+    {
+      "lesson_id": "LL-2026-09-02-01",
+      "action": "分析階段：HSF-006 症狀軌跡以 2026-09-01 為切點分段；依從率分母與 completed_at 維持原手術日。healthcare_utilization 無 is_reoperation 欄，再手術率要以 reason 全文檢索 reoperation 統計。",
       "owner": "PI",
       "priority": "medium"
     }

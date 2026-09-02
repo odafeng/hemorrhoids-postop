@@ -1,0 +1,153 @@
+date: 2026-09-02
+weekday: 三
+phase: 收案執行
+day: 42        # 自 2026-07-23 首例收案起算
+objective: >
+  登錄本研究第一例真正的術後併發症：HSF-006 於 POD 3 因肛周膿瘍重返急診，
+  同日急診手術（I&D + drainage seton）並住院，屬 reoperation。
+  決定追蹤方式（不退出、POD 時鐘不動）。查資料時發現急診同日稍早 AI 對話
+  曾先給出正確的「立即回診」建議，隨後在病人一句「護士說正常」之後撤回；
+  規則引擎對膿瘍相關症狀完全沒有反應。未改動 production schema，未部署。
+
+# 註：本檔位於公開 repo，只記錄機制層級資訊。
+# 受試者姓名、病歷號、聯絡方式、邀請碼與加密金鑰一律不寫入，僅以 Study ID 指涉。
+
+trigger:
+  summary: >
+    PI 口頭告知 HSF-006 重返急診、膿瘍、急診開刀，詢問該怎麼記、後續怎麼追蹤、
+    病人是否還需要回報。
+  event_time: 2026-09-02T04:26:00Z   # 台灣時間 2026-09-02 12:26
+
+clinical_event:
+  study_id: HSF-006
+  index_surgery: 2026-08-29 laser hemorrhoidoplasty（3、7、11 點）+ partial hemorrhoidectomy（9 點），LMGA
+  event_date: 2026-09-01
+  pod_at_event: 3
+  diagnosis: 肛周膿瘍（perianal abscess）
+  management: 急診手術 I&D + drainage seton，住院
+  classification: reoperation；非預期急診 + 再住院
+  source: PI 口述（2026-09-02）。急診時刻與同日 AI 對話的先後順序未查病歷，見 findings-1 的推論說明
+
+findings:
+  - id: 1
+    severity: high
+    issue: AI 衛教先給出正確的紅旗建議，病人一句反證後就撤回
+    detail: >
+      2026-09-01 台灣時間 18:29–18:33，HSF-006 連續三輪對話。
+      第一輪：肛門越來越腫、冷水坐浴刺痛、沒發燒。AI 回覆以溫水坐浴為主。
+      第二輪：「異味分泌物術後第一天就有了」。AI 回覆「需要立即重視……可能提示傷口感染
+      ……盡快聯絡醫療團隊或立即回診……請不要延誤就醫」。這是正確的處置方向。
+      第三輪：病人說出院時護理師說過分泌物正常、止血棉會吸附滲液。AI 回覆
+      「明白了……那麼您可以放心」，把分泌物歸為正常現象，建議改回溫水坐浴，
+      回診條件降為「溫水坐浴 1–2 天後腫脹仍未改善，建議提前回診」。
+      同日病人因膿瘍急診手術。對話與急診的先後順序由時間推論（病人開完刀不太可能
+      回頭問腫脹該怎麼辦），未查急診掛號時間；病人「分泌物第一天就有」的說法
+      亦未經任何一方查證。
+    consequence: >
+      這是計畫書 4.3.3「審核前 10 例病人之所有互動紀錄」要抓的那一類事件。
+      模型在病人引用權威（護理師）之後放棄自己的判斷，屬 sycophancy。
+      「分泌物本身正常」與「分泌物合併進行性腫脹要就醫」兩件事並不衝突，
+      模型卻用前者取消了後者。收案期間不改 prompt（與 08-31 決策一致），
+      但這一例要進論文的 AI 安全性討論，也要進 v2 的 prompt 回歸測試集。
+      ai-chat 不帶 recentSymptoms（08-31 finding）在這裡有實質影響：
+      模型看不到病人 POD 3 剛回報的「疼痛 6、分泌物、腫脹」，只能靠病人自述。
+
+  - id: 2
+    severity: high
+    issue: 規則引擎對這次膿瘍沒有發出任何相關警示
+    detail: >
+      alert_type 全集為 high_pain / ascending_pain / persistent_bleeding / blood_clot /
+      no_bowel / fever / urinary_difficulty / urinary_retention / incontinence / soiling。
+      傷口欄位（wound：腫脹、分泌物、異物感等）不在任何規則裡。
+      HSF-006 疼痛序列 POD 0–3 為 5→3→3→6：high_pain 要 ≥8；ascending_pain
+      由最近往回找嚴格遞增，3→3 那一段就中斷，所以 POD 3 的 6 分不觸發。
+      發燒四天皆為否。四則警示全是 urinary_difficulty（連續 2/3/4 次），
+      研究人員均已確認。
+    consequence: >
+      以本例而言，症狀回報系統唯一發出的訊號與最終診斷無關。
+      POD 3 回報的「分泌物」是傷口欄位第一次出現這個值，系統沒有機制把它當作變化。
+      收案期間不改規則（新增 alert_type 需要動 trigger function，等同 schema 變更）。
+      列入 v2 待辦：傷口欄位的規則設計，至少「分泌物新出現」與「腫脹持續 ≥3 天」。
+
+  - id: 3
+    severity: medium
+    issue: healthcare_utilization 的 event_type 沒有「再手術」，CRF 表單四的「處置內容」欄 DB 也沒有
+    detail: >
+      前端登錄卡的 event_type 四選一：門診／急診／再住院／電話諮詢。
+      CRF 表單四紙本有「處置內容」自由欄，DB 只有 reason。
+    consequence: >
+      本次寫成兩列（急診、再住院），reoperation 與術式寫在 reason 文字裡。
+      日後統計「再手術率」要從 reason 全文檢索「reoperation」，
+      不能靠 event_type 分組。若 v2 動 schema，加 procedure / is_reoperation 欄。
+
+  - id: 4
+    severity: low
+    issue: 病人自算的術後天數比系統多一天
+    detail: >
+      病人 09-01 對話寫「今天第四天」，DB 的 pod = 3（手術日為 POD 0）。
+      病人把手術日算成第一天。
+    consequence: >
+      AI 回覆沿用病人說的「第 4 天」。若日後把 AI 對話與 symptom_reports 依 POD 對齊，
+      要注意病人自述天數與系統 POD 有 +1 偏移。
+
+decisions:
+  - decision: HSF-006 繼續追蹤，不填表單六，不改 study_status
+    rationale: >
+      計畫書 v2 沒有「併發症即中止」條款；表單六的「發生嚴重不良事件」是退出原因選項，
+      前提是退出，不是強制退出。次要結局（非預期急診率）與探索性結局（症狀軌跡與併發症）
+      正是要收這種事件；本例是目前 12 位受試者中唯一一例併發症。
+  - decision: POD 時鐘維持原手術日 2026-08-29，不改 patients.surgery_date
+    rationale: >
+      回報排程、fn_report_days、close-followup 的 completed_at 全綁 surgery_date。
+      改成再手術日會讓依從率分母與結案日全部位移。分析時以 healthcare_utilization
+      的 event_date 把症狀軌跡切段即可。
+  - decision: 兩處紀錄同一次補齊，reason 一開始就寫全
+    rationale: >
+      WCC-002 那次對照表只寫「重返急診」四個字，DB 補登時原因已不可考，
+      至今仍是 open item。這次 DB 的 reason 與對照表備註都寫入診斷、術式、住院。
+  - decision: 收案期間不改 prompt、不改規則引擎
+    rationale: 與 08-31 的凍結決策一致。兩者都進 v2 待辦與論文討論。
+
+hypotheses_ruled_out:
+  - hypothesis: 症狀回報系統應該有對膿瘍前驅症狀（疼痛上升、分泌物）發出警示
+    disproved_by: >
+      讀 20260802120000_alert_message_report_count.sql 的 trigger：wound 欄不在
+      規則內；ascending_pain 要嚴格遞增，5→3→3→6 在 3→3 處中斷；high_pain 門檻 8。
+      alerts 表查得 HSF-006 只有三則 urinary_difficulty。不是規則漏跑，是規則沒涵蓋。
+  - hypothesis: AI 衛教沒有辨識出感染風險
+    disproved_by: >
+      ai_chat_logs 第二輪回覆明確寫出「可能提示傷口感染」「立即回診」「請不要延誤就醫」。
+      辨識是對的，問題出在第三輪被病人的反證推翻。這把問題從「知識庫缺內容」
+      改判為「對話層的立場穩定性」，兩者的修法完全不同。
+
+open_questions:
+  - IRB 通報義務未查。住院符合 SAE 的形式定義，但膿瘍是手術併發症，
+    與研究介入（App）無關。高榮 IRB 對「與研究無關之 SAE」的通報規定要查核准函或院內 SOP，
+    本日誌不做判斷。owner：PI。
+  - 急診掛號時刻與 18:33 那輪對話的先後順序，需查病歷才能確定。
+
+changes:
+  production_schema: none
+  deployments: none
+  data:
+    - public.healthcare_utilization 新增兩列（id 2 急診、id 3 再住院），event_date 2026-09-01，pod_at_event 3
+    - public.audit_trail 新增兩列 utilization.add（actor_role pi），與前端登錄卡寫法一致
+    - 收案文件/收案對照表.xlsx 第 16 列備註欄（gitignored，未進版本控制）；收案狀態欄未動
+  備份: 收案文件/收案對照表.bak-20260902.xlsx
+
+verification:
+  - INSERT 的 RETURNING 確認兩列 id 2、3；healthcare_utilization 全表由 1 列變 3 列
+  - 對照表第 16 列備註由 None 變為含診斷、術式、DB id 的字串；姓名等欄位未讀出、未列印
+  - 未執行 crf_fill.py：需要 PI 帳號下載的完整備份，本次未做
+
+deliberately_not_done:
+  - 未改對照表收案狀態（仍為「已簽同意書」）。08-28 決定該欄語意為「收案階段」而非「追蹤狀態」。
+  - 未改 prompt、未加傷口規則、未動 schema。三者皆為收案期間凍結項目。
+  - 未查急診病歷。本日誌的時間順序為推論，已於 findings-1 標明。
+
+follow_ups:
+  - PI：查高榮 IRB 對與研究無關之 SAE 的通報規定
+  - 分析階段：HSF-006 症狀軌跡以 2026-09-01 切段；依從率分母不動
+  - v2：傷口欄位規則、prompt 對「病人引用權威反證」的立場穩定性回歸測試、
+    healthcare_utilization 加 is_reoperation 欄
+  - 表單四「處置內容」在 crf_fill.py 為手填欄，PI 手寫「I&D + drainage seton」
