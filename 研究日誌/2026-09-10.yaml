@@ -1,0 +1,168 @@
+date: 2026-09-10
+weekday: 四
+phase: 收案執行
+day: 50        # 自 2026-07-23 首例收案起算
+objective: >
+  PI 詢問可用性問卷目前的填答狀況。查證後做了兩件事：修正一直以來被收案數取代的
+  填答率分母，以及推翻 2026-08-23 對低填答率成因的單一解釋——至少存在一例
+  「每天開 App、卡片每次都顯示、就是不填」。未改 production，未部署，未動任何一列資料。
+
+# 註：本檔位於公開 repo，只記錄機制層級資訊。
+# 受試者姓名、病歷號、聯絡方式、邀請碼與加密金鑰一律不寫入，僅以 Study ID 指涉。
+
+trigger:
+  summary: >
+    PI 問「大家目前為止的滿意度問卷填得如何」。問題本身只要一個數字，
+    但要給出可用的數字得先決定分母，決定分母的過程牽出了 08-23 那個解釋的問題。
+  event_time: 2026-09-10T06:06:00Z   # 台灣時間 2026-09-10 14:06
+
+snapshot:
+  as_of: 2026-09-10
+  enrolled_excluding_test: 13
+  surveys_collected: 4
+  eligible_pod14_not_withdrawn: 9
+  response_rate: 4/9 = 44.4%
+  response_rate_excluding_today_threshold: 4/8 = 50.0%   # 排除今日始達 POD 14 的 FIH-002
+  last_survey_received: 2026-08-25（WCC-002, POD 20）
+  days_since_last_survey: 16
+  crossed_threshold_since_then: 5   # 期間跨過 POD 14 者，新增問卷 0 份
+  respondents:
+    - {study_id: HSF-001, pod_at_survey: 14, likert: 5/5/5/5/5, free_text: true}
+    - {study_id: WCC-001, pod_at_survey: 14, likert: 5/5/5/5/5, free_text: true}
+    - {study_id: HSF-002, pod_at_survey: 15, likert: 5/4/5/5/5, free_text: false}
+    - {study_id: WCC-002, pod_at_survey: 20, likert: 5/5/5/5/5, free_text: true}
+  not_yet_eligible: [FIH-003 (POD 13), WCC-003 (POD 8), HSF-007 (POD 6)]
+  never_eligible: [HSF-006 (POD 12 退出，未達門檻)]
+
+findings:
+  - id: 1
+    severity: medium
+    issue: 填答率的分母一直被收案數取代
+    detail: >
+      直覺算法是 4 / 13 = 30.8%，但 13 是收案數。問卷卡片的門檻是 POD >= 14，
+      符合資格者為 POD >= 14 且未退出，共 9 人：HSF-001、WCC-001、WCC-002、HSF-002、
+      FIH-001、HSF-005、HSF-003、HSF-004、FIH-002。
+      FIH-003／WCC-003／HSF-007 尚未達門檻；HSF-006 於 POD 12 退出，從未符合資格。
+      正確填答率 4/9 = 44.4%，或排除今日才達門檻的 FIH-002 後 4/8 = 50.0%。
+    consequence: >
+      以收案數為分母會系統性低估填答率，且隨收案速度變動——收得越快數字越難看，
+      與填答行為無關。論文的 feasibility 章節必須明載分母定義與 as-of 日期。
+      這是 08-31 分母錯置（LL-2026-08-31-02）之後，同一個專案第二次在分母上出事，
+      前一次錯在暴露量，這一次錯在資格。
+
+  - id: 2
+    severity: medium
+    issue: 未填答的 5 人分屬兩種完全不同的機制，混在一起算的填答率無法解讀
+    detail: >
+      症狀回報只能自 App 內送出，故最後回報日等同最後一次確定開啟 App 的日期，
+      可作為「App 開啟」的 proxy。以此分層：
+      看得到卡片但未填 —— HSF-005（POD 26，POD >= 14 後仍送出 10 筆回報，
+      最後一筆 POD 25 / 2026-09-09）。
+      沒有開 App —— FIH-001（POD >= 14 後 0 筆，最後回報 2026-08-22，19 天前）、
+      HSF-003（0 筆，2026-08-26，15 天前）、HSF-004（0 筆，2026-08-28，13 天前，
+      已知為換機重置，見 09-02 findings-6）。
+      不列入 —— FIH-002 今日始達 POD 14，卡片今天才第一次出現。
+    consequence: >
+      non-response 必須分層報告。前者是介面顯著性或填答意願問題，後者是留存問題，
+      兩者的改善手段沒有交集。若只報一個 44.4%，論文讀者無從判斷該改哪一個。
+
+  - id: 3
+    severity: medium
+    issue: 自 2026-08-25 起 16 天零新增，期間 5 人跨過門檻
+    detail: >
+      最後一份為 WCC-002（POD 20）。POD 14 仍不在 fn_report_days()
+      （POD 0-7、9、11、13、20、27）內，卡片出現當日保證無推播的缺口自 08-23 起未處置。
+    consequence: >
+      08-23 findings-2 記的缺口現在有了跨 5 人的觀察，不再是推論。
+      收案期間不動排程；v2 若要改，最小改法是把卡片門檻與 fn_report_days() 對齊到 POD 13 或 20，
+      而不是新增一個推播時點。
+
+  - id: 4
+    severity: medium
+    issue: 天花板效應與 AI 對話暴露量自 08-31 起完全沒有變化
+    detail: >
+      20 個 Likert 格中 19 格為 5，唯一例外為 HSF-002 的 usefulness = 4，變異數趨近於零。
+      四位填答者的 ai_chat_logs 輪數本日重查：WCC-002 為 11（最後使用 2026-08-25），
+      HSF-001／WCC-001／HSF-002 皆為 0，與 08-31 查核結果逐項相同。
+    consequence: >
+      LL-2026-08-31-02 的分層策略下有效樣本仍為 n=1，且就是留下負面自由文字的那一位。
+      16 天沒有新資料進來，這兩則教訓的狀態不變，不需要重新評估。
+
+  - id: 5
+    severity: info
+    issue: 自由文字仍是唯一有資訊量的欄位
+    detail: >
+      三則（HSF-002 空白）。一則指出 pain NRS 未定義量測時點（已入
+      docs/research/2026-08-12-primary-outcome-measurement-gaps.md 缺口四）；
+      一則為無具體資訊的正面回饋；一則指出 AI 衛教回答不夠完整、希望能線上諮詢真人。
+    consequence: LL-2026-08-23-02 的順序（先讀自由文字再看分數）第三次適用，未出現反例。
+
+hypotheses_ruled_out:
+  - hypothesis: >
+      問卷填答率量到的是 App 開啟行為，不是填答意願（2026-08-23.yaml#findings-1 的結論）
+    disproved_by: >
+      HSF-005 在 POD >= 14 之後仍送出 10 筆症狀回報（2026-08-29 至 2026-09-09），
+      且症狀回報只能自 App 內送出。
+      App.jsx:301 的 /report 路由在 onComplete 後執行 navigate('/')，
+      而 '/' 即 Dashboard（App.jsx:296）——每一次送出回報都會落回 Dashboard。
+      Dashboard.jsx:159 的卡片條件僅有 `pod >= 14 && !surveyDone`，
+      無 dismiss、無 study_status 過濾、無其他 gating。
+      故該卡片至少已對他渲染 10 次而未被點擊。原解釋對至少一例不成立。
+    scope_of_refutation: >
+      推翻的是「排他性」，不是整個解釋。另外三位未填答者（FIH-001、HSF-003、HSF-004）
+      POD >= 14 後回報數皆為 0，與原解釋一致。正確的說法是兩種機制並存，
+      比例目前為 1:3，n 太小不足以做任何主張。
+
+decisions:
+  - decision: 不對 HSF-005 發出人工提醒，等 PI 決定
+    rationale: >
+      他是目前唯一「還在用、且持續略過卡片」的案例。提醒後仍不填是填答意願的乾淨證據；
+      一提醒就填則指向卡片顯著性不足，是可寫進 limitation 的設計發現。
+      兩種結果都有價值，但提醒本身會污染這一例的自然填答資料，取捨屬 PI 權限。
+  - decision: 不改卡片門檻、不改 fn_report_days()、不改問卷題目
+    rationale: >
+      收案期間凍結項目。改題目會讓前後兩批受試者填不同的工具（LL-2026-08-31-02 已載明），
+      改排程等同動 production。三者皆進 v2 待辦。
+  - decision: 分母定義以「POD >= 14 且 study_status <> 'withdrawn'」為準，並在論文中明寫
+    rationale: >
+      與 08-12 排除 TEST-001 的處理一致：過濾放在統計層，不放在查詢層或 view，
+      理由是 09-02 已證實 view 寫死的過濾條件會讓退出者從不該消失的分子裡消失。
+
+changes:
+  production_schema: none
+  deployments: none
+  data: none    # 本日全部為唯讀查詢
+  files:
+    - 研究日誌/2026-09-10.yaml（本檔，新增）
+    - 研究日誌/lessons_learned.json（LL-2026-08-23-02 與 LL-2026-08-31-02 的 used_on 各補一筆）
+    - 研究日誌/README.md（兩份索引各補一列）
+
+verification:
+  - 分母以單一 SQL 取得：patients left join usability_surveys，排除 TEST-001，
+    逐列列出 surgery_date、current_date - surgery_date、study_status、survey_date。
+    未以任何既有 view 計算——v_adherence_summary 寫死 study_status <> 'withdrawn'，
+    用它會讓 HSF-006 在「從未符合資格」與「被過濾」之間分不出來（09-02 的教訓）
+  - App 開啟 proxy 的成立條件已檢查到路由層：/report 的 onComplete 為 navigate('/')，
+    '/' 綁定 Dashboard，Dashboard.jsx:159 的卡片條件無其他 gating。
+    未實機登入病人帳號確認，亦未確認該卡片在手機視窗是否落在第一屏之內（見 open_questions）
+  - ai_chat_logs 輪數對四位填答者逐一重查，與 08-31 紀錄逐項比對相同，非引用舊值
+  - 「16 天零新增」由 usability_surveys 全表 created_at 最大值確認，非由 survey_date 推得
+
+deliberately_not_done:
+  - 未發出任何提醒或聯絡受試者。理由見 decisions 第一則
+  - 未查 FIH-001／HSF-003 停止回報的原因。HSF-004 已知（換機重置），
+    另兩位未接觸；若要查應由 PI 於回診時面詢，不從系統推測
+  - 未改 v_adherence_summary 或新增問卷相關 view。收案期間不動 schema
+  - 未把 44.4% 寫進任何對外文件。分母定義尚待 PI 確認後才進統計程式
+
+open_questions:
+  - 問卷卡片在手機視窗是否需要捲動才看得到。卡片位於 POD 標尺區塊之後，
+    未實機量測。若需捲動，「渲染 10 次」與「被看見 10 次」就不等價，
+    findings-2 的分層強度會下降。owner：可於下次 375px 檢查時一併確認
+  - HSF-005 是否已達成 POD 0-7 內 >= 5 次回報的主要結局指標（未查，與本日問題無關）
+
+follow_ups:
+  - PI：決定是否對 HSF-005 發出人工提醒，以及提醒後該例在分析中如何標註
+  - PI：確認填答率分母定義（POD >= 14 且未退出），確認後才寫進統計程式與論文
+  - 分析階段：non-response 依「未開 App」與「開了不填」分層報告，不報單一填答率
+  - v2：卡片門檻與 fn_report_days() 對齊；問卷題目綁定具體功能而非「這個系統」（LL-2026-08-31-02）
