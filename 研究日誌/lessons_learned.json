@@ -710,6 +710,11 @@
           "date": "2026-09-02",
           "what": "HSF-006 重返急診登錄。依此教訓把 DB（healthcare_utilization）與對照表備註兩處在同一次補齊，且 reason 一開始就寫入診斷、術式、住院",
           "outcome": "有效。對比 WCC-002 那次對照表只寫四個字、DB 補登時原因已不可考的狀況，本次不再產生待補述的 open item"
+        },
+        {
+          "date": "2026-09-16",
+          "what": "PI 問「對照表裡哪些病人的資訊還沒填」。依此教訓先跑 public.patients ↔ public.pii_patients 的 left join，而不是逐列讀對照表",
+          "outcome": "有效，且這是同一個 failure mode 第二次發生。抓到 HSF-007（延遲 13 天）與 CYH-001（延遲 6 天）兩例，patients 有、對照表與 pii_patients 皆無。對策已寫進 CLAUDE.md 一個月，仍然漏——因為沒有任何東西會去跑它。教訓要再推一層：可執行的檢查若沒有排程，等同於沒有檢查"
         }
       ]
     },
@@ -1222,6 +1227,150 @@
         ]
       },
       "used_on": null
+    },
+    {
+      "id": "LL-2026-09-16-01",
+      "title": "缺漏有兩種形狀，只查 NULL 會交出一份看起來完整的清單",
+      "date_learned": "2026-09-16",
+      "status": "resolved",
+      "severity": "medium",
+      "domains": [
+        "data-integrity",
+        "audit",
+        "process"
+      ],
+      "context": "PI 要求盤點收案對照表與資料庫的未填欄位。",
+      "symptom": "第一份報告列完所有空白格，讀起來像盤點完成；稍後比對 patients.study_status 才發現另有六格填了值但與資料庫不符。",
+      "root_cause": {
+        "statement": "「缺漏」被預設成「欄位是空的」。填了但過期的值通過所有 is null 檢查，不會出現在任何空值查詢裡，而且比空白格更難察覺——空白格至少看得出來沒填。"
+      },
+      "evidence": {
+        "grade": "direct",
+        "items": [
+          "HSF-001／WCC-001／WCC-002／HSF-002／FIH-001 對照表寫「追蹤中」，DB study_status 已是 completed",
+          "WCC-003 對照表寫「已簽同意書」，DB 已是 active 且有 5 筆回報"
+        ]
+      },
+      "consequence": "一份只查 NULL 的盤點會給出錯誤的完整感，而後續決策會建立在這份清單上。",
+      "resolution": {
+        "approach": "稽核一律做兩趟：一趟查 NULL，一趟拿兩份來源逐欄比對。",
+        "verification": "第二趟抓到六格，五格當場同步，三格留待門檻裁示"
+      },
+      "principle": {
+        "statement": "盤點「缺什麼」時要同時問「哪些是空的」與「哪些是舊的」。兩份來源存同一份事實時，不一致比空白更常見也更難發現。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "稽核腳本只有 is null / coalesce 條件，沒有跨來源的等值比對",
+        "同一份事實存在兩處，其中一處由系統維護、另一處由人維護",
+        "盤點報告的結論是「除了這幾格都齊了」"
+      ],
+      "related": {
+        "lessons": [
+          "LL-2026-08-14-03"
+        ],
+        "journal": [
+          "2026-09-16.yaml#findings.2"
+        ],
+        "memory": []
+      },
+      "used_on": []
+    },
+    {
+      "id": "LL-2026-09-16-02",
+      "title": "分類門檻先去已核准文件裡找，不要從資料分佈挑",
+      "date_learned": "2026-09-16",
+      "status": "resolved",
+      "severity": "medium",
+      "domains": [
+        "study-design",
+        "analysis",
+        "consort"
+      ],
+      "context": "需為 discontinued intervention 訂一個判定門檻，以區分中途停止回報者與完成追蹤者。",
+      "symptom": "最後回報 POD 排出來是 9、11、13 一組與 25、27、27、30、32 一組，中間空了十二天，很容易直接把切點放在空隙中央。",
+      "root_cause": {
+        "statement": "從資料分佈挑切點是 post hoc cutoff，無法回答「為什麼是這個數字不是另一個」。而且那個空隙有一部分是排程造成的假象——應回報日編碼為 POD 0–7、9、11、13、20、27，POD 14 至 19 之間本來就沒有應回報日。"
+      },
+      "evidence": {
+        "grade": "direct",
+        "items": [
+          "受試者同意書（ConsentPage.jsx，PI 於 2026-08-02 確認）載明「第 0–7 天每日、第 8–14 天每 2 天一次、第 15–30 天每週」",
+          "門檻取 14、17 或 20 對現有 14 筆資料的分類結果完全相同"
+        ]
+      },
+      "consequence": "改以同意書的階段界線 POD 14 為門檻，可回答審稿人的「為什麼是 14」，且對切點不敏感這件事本身可寫進方法學段落。",
+      "resolution": {
+        "approach": "門檻取 POD 14，並附兩個保護條款：只能在 POD 30 追蹤結束或退出後判定；withdrawn 優先於 discontinued。",
+        "verification": "以 14 筆現有資料逐例套用，確認 active 個案不會被誤判"
+      },
+      "principle": {
+        "statement": "要為某個分類定門檻時，先查協議書、同意書、CRF 有沒有現成的階段界線。用已核准文件既有的分界，切點就不是從資料裡挑出來的。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "切點的理由是「資料在這裡有個空隙」",
+        "沒有人去查協議書裡有沒有對應的階段劃分",
+        "把觀測到的間隔當成行為分界，未先排除排程造成的假象"
+      ],
+      "related": {
+        "lessons": [],
+        "journal": [
+          "2026-09-16.yaml#decisions.D2"
+        ],
+        "memory": []
+      },
+      "used_on": []
+    },
+    {
+      "id": "LL-2026-09-16-03",
+      "title": "把「沒回報」讀成「沒事」，等於預設缺失隨機",
+      "date_learned": "2026-09-16",
+      "status": "open",
+      "severity": "high",
+      "domains": [
+        "analysis",
+        "safety",
+        "missing-data"
+      ],
+      "context": "PI 對中止回報者的既有假設是「沒什麼事他們就不想回報」，並據此決定不補問中止原因。",
+      "symptom": "各自取最後一筆比較時，中止組看起來與完成組差不多；但兩組的最後一筆落在完全不同的 POD 區間。",
+      "root_cause": {
+        "statement": "未做 POD 配對就比較。中止組最後一筆落在 POD 9–13，完成組落在 POD 25–32，比的是術後不同時期，痊癒曲線本身就會製造差異。"
+      },
+      "evidence": {
+        "grade": "direct",
+        "items": [
+          "POD 9–13 配對窗格：中止組（HSF-004／HSF-003／FIH-001）5 筆，pain_nrs 中位數 3（範圍 1–3），5/5 帶出血",
+          "同窗格完成組（HSF-001／WCC-001／WCC-002／HSF-002／HSF-005）20 筆，pain_nrs 中位數 0.5（範圍 0–3），5/20 帶出血"
+        ]
+      },
+      "consequence": "若停止回報與症狀嚴重度相關，缺失就不是隨機的，任何把未回報視為 missing-at-random 的分析都會低估症狀負擔。對一個症狀監測 App 而言更直接的問題是：警示系統看不到沉默的人，而最需要被抓到的族群正好是抓不到的那群。",
+      "limitations": "3 人 5 筆對 5 人 20 筆，未做統計檢定。HSF-004 有明確的機械性原因（手機重置、無意願重裝），與症狀無關，扣掉他只剩兩人。方向值得追，強度不足以下結論。",
+      "resolution": {
+        "approach": "暫不下結論。記入日誌 follow_ups，待收案接近 50 例時以相同的 POD 配對窗格重跑。",
+        "verification": "pending"
+      },
+      "principle": {
+        "statement": "比較兩組的「最後狀態」之前，先確認兩組的最後狀態落在同一個時間窗。在有痊癒曲線的縱貫資料裡，未配對的最後一筆比較必然把時間差異誤讀成組間差異。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "拿各組的最後一筆、最新一筆或最大值直接比較，未對齊時間軸",
+        "把「沒有資料」當成「沒有事件」",
+        "退出或失聯者被整批排除，且未檢查退出與結果變項是否相關"
+      ],
+      "related": {
+        "lessons": [
+          "LL-2026-08-31-02"
+        ],
+        "journal": [
+          "2026-09-16.yaml#findings.4",
+          "2026-09-02.yaml"
+        ],
+        "memory": []
+      },
+      "used_on": []
     }
   ],
   "open_items": [

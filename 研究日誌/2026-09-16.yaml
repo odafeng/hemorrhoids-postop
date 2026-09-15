@@ -1,0 +1,236 @@
+date: 2026-09-16
+weekday: 三
+phase: 收案執行
+day: 56        # 自 2026-07-23 首例收案起算
+objective: >
+  PI 問「對照表裡哪些病人的資訊還沒填」。對帳查出兩筆收案（HSF-007、CYH-001）
+  在 patients 已存在、對照表與 pii_patients 卻都沒有——2026-08-14 那個 failure mode
+  第二次發生。當場補齊並回填 11 人份回診日。
+  過程中另外兩件比補登本身更值得記：一是我的第一份稽核只查空白格、漏掉六格「填了但過期」；
+  二是 POD 配對比較推翻了「沒什麼事就不想回報」這個對中止者的既有假設。
+  未改動 production schema，未部署。
+
+# 註：本檔位於公開 repo，只記錄機制層級資訊。
+# 受試者姓名、病歷號、聯絡方式與加密金鑰一律不寫入，僅以 Study ID 指涉。
+
+trigger:
+  summary: >
+    PI 要求盤點收案對照表與資料庫的未填欄位，隨後提供缺漏兩筆的個資、
+    11 人份門診回診日截圖，並裁示新增一個收案狀態值給中途停止回報者。
+  event_time: 2026-09-15T16:45:00Z   # 台灣時間 2026-09-16 00:45
+
+findings:
+  - id: 1
+    severity: high
+    issue: 兩筆收案在 patients 已存在，對照表與 pii_patients 都沒有
+    detail: >
+      HSF-007（收案 09-03、手術 09-04）與 CYH-001（收案 09-10、手術 09-11）。
+      patients 列由 App 註冊流程自動建立，兩處人工登錄都被漏掉。
+      HSF-007 在 2026-09-10.yaml 的問卷資格清單裡出現過，表示當時知道有這個人，
+      只是登錄那一步沒做。CYH-001 是 CYH 這個主刀醫師代碼的首例。
+    detected_by: >
+      CLAUDE.md 記載的 patients ↔ pii_patients left join 對帳查詢。
+      依 2026-09-01.yaml 的教訓加上 public. 前綴，避開 archive_20260421 同名表。
+    consequence: >
+      去識別化臨床資料存在、身分對應兩處皆無。缺漏期間 App 與 dashboard 完全正常，
+      因為兩者都只讀 patients，不一致在系統中完全合法。
+    fix: 當日補齊兩處，對帳查詢回傳空集合，三處首次對齊在 14 筆
+
+  - id: 2
+    severity: medium
+    issue: 稽核只查 NULL，漏掉「填了但已過期」的六格
+    detail: >
+      第一份報告列出的缺漏只有空白格（收案狀態 3 格、回診欄多格）。
+      加完新狀態值後順手比對 Excel 與 patients.study_status，才發現另有六格
+      填了值但與資料庫不符：HSF-001／WCC-001／WCC-002／HSF-002／FIH-001 仍寫「追蹤中」
+      而 DB 已是 completed；WCC-003 仍寫「已簽同意書」而 DB 已是 active 且有 5 筆回報。
+    consequence: >
+      一份只查 NULL 的稽核會回報「除了這幾格都齊了」，讀起來像盤點完成，
+      實際上過期的值比空白格更難發現——空白格至少看得出來沒填。
+    fix: >
+      五格（不論門檻怎麼定都不會改變的）當場同步；FIH-001、HSF-003、CYH-001 三格
+      留待門檻裁示後處理
+
+  - id: 3
+    severity: medium
+    issue: 對照表的回診欄標題與實際回診時點完全對不上
+    detail: >
+      欄位原標「第一次回診(D7)」「第二次回診(D14)」「第三次回診(D28)」。
+      11 人的實際術後回診 POD 為 4、7、8、10、11、11、12、12、12、18、18、19、25、33。
+      整份資料只有 HSF-001 的 POD 7 落在標籤上，最集中的落點是 POD 11–12。
+      沒有任何一位跑完三次，六人只回診一次。
+      PI 提供的門診回診日另含術前門診（最早的距手術 41 天），直接照抄會把術前記成術後。
+    consequence: >
+      標籤與內容不符時，下一個讀表的人會把 POD 12 當成 D7 回診。
+      本專案已有兩次因定義誤讀而算錯的前例（08-31 暴露量分母、09-10 資格分母）。
+    fix: >
+      依 PI 裁示改標題為「第一次回診／第二次回診／第三次回診」，移除括號內的名目排程；
+      只填術後回診、依時序放入三欄，術前門診不留存
+
+  - id: 4
+    severity: high
+    issue: 停止回報者在停之前的症狀比持續回報者更重，不是更輕
+    detail: >
+      PI 對中止者的假設是「沒什麼事他們就不想回報」。
+      直接比較兩組最後一筆會落入 POD 不對等的陷阱（中止組落在 POD 9–13，
+      完成組落在 POD 25–32）。改取 POD 9–13 配對窗格後：
+      中止組（HSF-004／HSF-003／FIH-001）共 5 筆，pain_nrs 中位數 3（範圍 1–3），
+      5/5 帶出血；完成組（HSF-001／WCC-001／WCC-002／HSF-002／HSF-005）共 20 筆，
+      pain_nrs 中位數 0.5（範圍 0–3），5/20 帶出血。
+    consequence: >
+      若停止回報與症狀嚴重度相關，缺失就不是隨機的，
+      任何把未回報視為 missing-at-random 的分析都會偏向低估症狀負擔。
+      更直接的是警示系統看不到沉默的人——最需要被抓到的族群正好是抓不到的那群。
+      這是 feasibility 研究可報的實質發現，不只是 limitation。
+    limitations: >
+      3 人 5 筆對 5 人 20 筆，未做任何統計檢定，也不建議做。
+      HSF-004 有明確記載的機械性原因（手機重置、無意願重裝），與症狀無關，
+      扣掉他只剩兩人。方向值得追，強度不足以下結論。
+    clinical_follow_up: >
+      FIH-001 的 POD 9 那筆是「出血＝持續」（其餘皆為「少量」）、NRS 3，
+      其後再無回報，一路到 POD 30 自動結案。建議翻門診紀錄確認後續無事。
+      該例 08-21（POD 8）有回診，但在最後一筆回報之前。
+
+hypotheses_ruled_out:
+  - hypothesis: 中止回報者是因為症狀輕微、沒事可報才停止回報
+    disproved_by: >
+      POD 9–13 配對比較方向相反：中止組 NRS 中位數 3、5/5 帶出血；
+      完成組 NRS 中位數 0.5、5/20 帶出血。
+      未配對的直覺比較（各自最後一筆）會得到相反印象，因為中止組的最後一筆
+      落在 POD 9–13、完成組落在 POD 25–32，比的是不同時期。
+      注意這只推翻「症狀輕才停」，不等於證實「症狀重才停」——n 太小。
+
+  - hypothesis: 列出所有 NULL 欄位就等於列出所有缺漏
+    disproved_by: >
+      六格已填但與 patients.study_status 不符，全部通過了 NULL 檢查。
+      缺漏有兩種形狀，空的與舊的，第二種不會出現在任何 is null 查詢裡。
+
+  - hypothesis: 最後回報 POD 13 與 POD 25 之間的十二天空隙是行為上的自然分界
+    disproved_by: >
+      應回報日編碼為 POD 0–7、9、11、13、20、27（見 開發維運日誌.md）。
+      POD 14 至 19 之間本來就沒有任何應回報日，空隙有一部分是排程造成的假象。
+      實際意義是「做完第二階段最後一次（POD 13）就停」vs「進入第三階段」。
+
+decisions:
+  - id: D1
+    topic: 新增收案狀態值「中止介入」
+    decision: >
+      下拉清單（M6:M55）新增「中止介入」，插在「已完成」與「已退出」之間。
+      對應 CONSORT 的 discontinued intervention，與 withdrawn 分屬兩個框。
+    rationale: >
+      HSF-004 停的是介入不是同意（見 2026-09-02.yaml），標 withdrawn 會讓依從率虛高；
+      標「已完成」則會讓 CONSORT flow diagram 的兩條分支併成一條。
+    applied_to: HSF-004（HSF-003、FIH-001 疑似同類，待門檻確認後處理）
+
+  - id: D2
+    topic: 中止介入的判定門檻取 POD 14
+    decision: 最後一筆症狀回報落在 POD 14 以前者，判定為 discontinued intervention
+    rationale: >
+      POD 14 不是從資料分佈挑出來的切點，而是受試者同意書（ConsentPage.jsx，
+      PI 於 2026-08-02 確認）載明的階段界線：「第 0–7 天每日、第 8–14 天每 2 天一次、
+      第 15–30 天每週」。用已核准文件既有的分界，可避免審稿人質疑 post hoc cutoff。
+      另因應回報日在 POD 14–19 之間為空，門檻取 14、17 或 20 對現有資料分類結果相同——
+      這個對切點不敏感的性質應寫進方法學段落。
+    guards:
+      - >
+        只能在 POD 30 追蹤結束或退出後判定。若即時套用，
+        HSF-007（POD 12、最後回報 POD 11）、WCC-003（POD 14、最後回報 POD 7）
+        與 CYH-001（POD 5、零回報）都會被誤判為中止。
+      - >
+        withdrawn 優先於 discontinued。HSF-006 最後回報 POD 6 符合中止條件，
+        但他是嚴重不良事件後由研究者主動中止，若同時落入兩框則 flow diagram 對不起來。
+    naming: 英文用 discontinued intervention（CONSORT 用語），不用 ceased
+
+  - id: D3
+    topic: 不回頭詢問中止原因
+    decision: PI 裁示不補問 FIH-001 與 HSF-003 的中止原因
+    rationale: PI 判斷聯絡成本高於取得的資訊價值
+    consequence: >
+      這兩例在 CONSORT flow diagram 只能歸入 discontinued intervention 而無法區分
+      lost to follow-up；論文需載明 "reason for discontinuation was not systematically
+      collected"。finding 4 的觀察因此只能停在假設層級，無法歸因。
+
+  - id: D4
+    topic: 缺漏的手術紀錄暫不催補
+    decision: WCC-003 與 CYH-001 的 surgical_records 維持缺漏，分析階段再從院內手術紀錄補
+    rationale: PI 表示兩例為其他主治醫師的個案，不便催促
+    consequence: >
+      CRF 表單一的痔瘡分級、術式、縫合方式、能量器械、麻醉方式靠此表預填，
+      在補入前這兩例無法填寫。記入 follow_ups 以免在分析前一週才發現。
+
+changes:
+  production_schema: none
+  deployments: none
+  data:
+    - public.pii_patients 新增 HSF-007、CYH-001 兩列（enrolled_at 取 patients.created_at）
+    - 收案對照表新增第 18、19 列（序號 13、14），樣式自第 17 列 copy(_style) 整列複製
+    - 收案對照表回診三欄改名，移除 (D7)/(D14)/(D28)
+    - 收案對照表填入 11 人份術後回診日（術前門診未填）
+    - 收案對照表資料驗證 M6:M55 新增「中止介入」
+    - 收案對照表收案狀態同步 8 格
+  備份:
+    - 收案對照表.bak-20260916.xlsx（補登前）
+    - 收案對照表.bak-20260916-2.xlsx（補登後、填回診前）
+    - 收案對照表.bak-20260916-3.xlsx（填回診後、改狀態前）
+
+verification:
+  - 密文長度減 66 檢核：HSF-007 name 9／birth 10／mrn 7／phone 9，CYH-001 name 9／birth 10／mrn 8／phone 10（未解密）
+  - HSF-007 為首例市話聯絡電話（07 區碼），正規化後 9 碼而非既有的 10 碼，
+    2026-08-14 使用的 ^09\d{8}$ 斷言對此例不適用，驗證條件需放寬
+  - enrolled_at = patients.created_at 兩筆皆為 true
+  - pii_access_log 兩筆 access_type=insert 且 access_reason 非 null
+  - 孤兒對帳（public.patients left join public.pii_patients，排除 TEST-001）回傳空集合
+  - 對照表新列樣式與第 17 列 14/14 相等；反向以仍空白的第 20 列驗證 3 格不等，確認樣式複製非空操作
+  - 資料驗證範圍 G6:G55、M6:M55 與四個合併儲存格於三次寫入後均未受影響
+  - 回診欄 number_format 全為 yyyy-mm-dd；回填後逐列重算 POD 並列印核對
+  - 手術日交叉驗證：PI 提供的住院區間 11/11 均包住對照表所記手術日（入院 D-1、出院 D+1）
+
+follow_ups:
+  - item: WCC-003 與 CYH-001 的 surgical_records 缺漏
+    detail: 兩例的 CRF 術式相關欄位在補入前無法填寫
+    next: 分析階段自院內手術紀錄補登
+    owner: PI
+    status: 刻意延後（見 decisions D4）
+
+  - item: FIH-001 與 HSF-003 的收案狀態尚未決定
+    detail: 兩例最後回報 POD 9 與 11，符合 D2 門檻，但 HSF-003 已先被設為「已完成」
+    next: 依 D2 門檻改為「中止介入」，或由 PI 另行裁示
+    owner: PI
+
+  - item: CYH-001 收案後零回報
+    detail: 收案第 6 天、術後第 5 天，symptom_reports 零筆，last_report 為 null。同期 HSF-007 至 POD 12 已 10 筆
+    next: 聯絡確認 App 是否完成安裝
+    owner: PI
+
+  - item: national_id_enc 全表 14 筆為 NULL
+    detail: 欄位可為空且從未使用，推測為設計上不收身分證字號，未查證 IRB 文件
+    next: PI 確認後補記；若確為設計，應在 schema 註解寫明以免日後被當成漏填
+    owner: PI
+
+  - item: finding 4 的 informative dropout 需在收案數足夠後重算
+    detail: 目前 3 人 5 筆對 5 人 20 筆，只能描述不能檢定
+    next: 收案接近 50 例時以 POD 配對窗格重跑，並納入論文 feasibility 段落
+    owner: 待收案數
+
+  - item: app_activated 欄位 14 筆全 false 且無任何寫入端
+    detail: 全 repo 僅 base_schema.sql 提及。屬 LL-2026-08-28-02 描述的「會靜靜說謊的欄位」
+    next: 若論文或 dashboard 需要「App 啟用率」，不可使用此欄
+    owner: 待需求出現
+
+lesson_audit_has_two_shapes: >
+  盤點缺漏時，「空的」與「舊的」是兩種形狀，而只有第一種會出現在 is null 查詢裡。
+  這次第一份報告列完所有空白格，讀起來像盤點完成，實際上另有六格填了值但與權威來源不符。
+  過期的值比空白格更難發現，因為空白格至少看得出來沒填。
+  對策是稽核一律做兩趟：一趟查 NULL，一趟拿兩份來源逐欄比對。
+
+lesson_threshold_from_approved_documents: >
+  要為某個分類定門檻時，先去已核准文件裡找有沒有現成的界線，不要從資料分佈挑。
+  這次 POD 14 來自受試者同意書的階段劃分，不是來自「資料在這裡有個空隙」。
+  兩者在本次資料上給出相同的分類結果，但前者可以回答「為什麼是 14 不是 10」，後者不行。
+  附帶收穫是發現那個空隙有一部分是排程造成的假象——POD 14 至 19 本來就沒有應回報日。
+
+lesson_dropout_may_not_be_silence: >
+  把「沒回報」讀成「沒事」，等於預設缺失隨機。這次配對比較顯示方向可能相反：
+  停止回報者在停之前更痛、而且每一筆都還在出血。n 太小不能下結論，
+  但足以說明「沒消息就是好消息」在這個系統裡不是安全的預設——
+  而這正是一個症狀監測 App 最不該弄錯的假設。
