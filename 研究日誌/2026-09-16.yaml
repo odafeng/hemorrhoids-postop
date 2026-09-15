@@ -213,9 +213,25 @@ follow_ups:
     owner: 待收案數
 
   - item: app_activated 欄位 14 筆全 false 且無任何寫入端
-    detail: 全 repo 僅 base_schema.sql 提及。屬 LL-2026-08-28-02 描述的「會靜靜說謊的欄位」
-    next: 若論文或 dashboard 需要「App 啟用率」，不可使用此欄
+    detail: >
+      全 repo 僅 base_schema.sql 提及，但資料庫函式 karen_research_status() 讀它算啟用數。
+      屬 LL-2026-08-28-02 描述的「會靜靜說謊的欄位」。
+    next: >
+      若論文或 dashboard 需要「App 啟用率」，不可使用此欄。
+      要移除得先依 2026-08-28 決議改寫 karen_research_status()，改由「至少回報過一次症狀」認定。
     owner: 待需求出現
+
+  - item: 已寫好但刻意未套用的 migration——移除 national_id_enc 與 app_activated_at
+    detail: >
+      prototype/supabase/migrations/20260916020000_drop_unused_columns.sql。
+      兩欄 14/14 為 NULL 且全系統零引用（view / routine / policy / index 均已查證）。
+      CI 不會套用（ci.yml:202 明載），收案期間亦不得手動套用。
+      不含 app_activated，理由見該檔註解。
+    next: >
+      收案結束後在 SQL editor 人工執行。套用前重跑檔內列出的三項前置檢查——
+      依賴狀態是 2026-09-16 的快照，且 repo 外的維運腳本 grep 不到。
+    owner: PI
+    status: 刻意延後至收案結束
 
 lesson_audit_has_two_shapes: >
   盤點缺漏時，「空的」與「舊的」是兩種形狀，而只有第一種會出現在 is null 查詢裡。
