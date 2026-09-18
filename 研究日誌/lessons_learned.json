@@ -715,6 +715,11 @@
           "date": "2026-09-16",
           "what": "PI 問「對照表裡哪些病人的資訊還沒填」。依此教訓先跑 public.patients ↔ public.pii_patients 的 left join，而不是逐列讀對照表",
           "outcome": "有效，且這是同一個 failure mode 第二次發生。抓到 HSF-007（延遲 13 天）與 CYH-001（延遲 6 天）兩例，patients 有、對照表與 pii_patients 皆無。對策已寫進 CLAUDE.md 一個月，仍然漏——因為沒有任何東西會去跑它。教訓要再推一層：可執行的檢查若沒有排程，等同於沒有檢查"
+        },
+        {
+          "date": "2026-09-18",
+          "what": "PI 問「現在缺哪些病人資訊」。依此教訓先跑 left join 對帳，而不是逐列讀對照表",
+          "outcome": "有效，同一個 failure mode 第三次發生：FIH-004／FIH-005／WCC-004 三筆 patients 有、對照表與 pii_patients 皆無，延遲約一天。真正的訊號是間隔在縮短——第一次到第二次 33 天，第二次到第三次 2 天，而 09-17 一晚註冊三例。2026-09-16 那筆 used_on 已寫下『沒有排程的檢查等同沒有檢查』，這次證實了它：對策躺在 CLAUDE.md 裡兩個月，三次都仍然要等人想到去跑。已提案把對帳併入既有的每日推播，待 PI 裁示"
         }
       ]
     },
@@ -1267,14 +1272,21 @@
       ],
       "related": {
         "lessons": [
-          "LL-2026-08-14-03"
+          "LL-2026-08-14-03",
+          "LL-2026-09-18-01"
         ],
         "journal": [
           "2026-09-16.yaml#findings.2"
         ],
         "memory": []
       },
-      "used_on": []
+      "used_on": [
+        {
+          "date": "2026-09-18",
+          "what": "盤點對照表缺漏時依此教訓做兩趟：查空白格，再與 patients.study_status 逐欄比對",
+          "outcome": "第二趟有效，抓到 FIH-001（對照表「追蹤中」／DB completed）與 CYH-001（「已簽同意書」／DB active 且已有回報）兩格過期值。但兩趟都漏掉 WCC-002 電話欄的「未取得」——非空字串，且 DB 端同樣無值，兩趟都判它一致。本則的兩種形狀不完整，第三種見 LL-2026-09-18-01"
+        }
+      ]
     },
     {
       "id": "LL-2026-09-16-02",
@@ -1367,6 +1379,99 @@
         "journal": [
           "2026-09-16.yaml#findings.4",
           "2026-09-02.yaml"
+        ],
+        "memory": []
+      },
+      "used_on": []
+    },
+    {
+      "id": "LL-2026-09-18-01",
+      "title": "存在性檢查回答不了完整性：欄位裡可能填著一個不是值的東西",
+      "date_learned": "2026-09-18",
+      "status": "resolved",
+      "severity": "medium",
+      "domains": [
+        "data-integrity",
+        "audit",
+        "pii"
+      ],
+      "context": "盤點收案對照表缺漏，稽核腳本以「儲存格非空白」判定該欄已填。",
+      "symptom": "報告指出 WCC-002 的聯絡電話在對照表有、在 pii_patients 為 NULL，判為兩邊不一致。實際讀取該格內容為字串「未取得」。",
+      "root_cause": {
+        "statement": "「已填」被實作成「非空」。佔位字串同時通過 is null 查詢與非空檢查，而當另一份來源也確實沒有資料時，跨來源比對同樣判它一致——2026-09-16 定的兩趟稽核都攔不到。"
+      },
+      "evidence": {
+        "grade": "direct",
+        "items": [
+          "該儲存格型別為 str、長度 3、內容非數字；其餘 16 列為 0xxx-xxx-xxx 格式",
+          "改用格式斷言（電話 ^0\\d{1,3}-\\d{3,4}-\\d{3,4}$、病歷號 ^\\d{7,8}$、出生日期須為 datetime）重跑全表，17 列中僅此一格不合格"
+        ]
+      },
+      "consequence": "誤報一項不存在的不一致。若照該報告去補，PI 會去找一個從來沒取得過的號碼；而真正該做的是確認這筆資料是否取得得到，並把佔位字串換成留空加備註。",
+      "resolution": {
+        "approach": "稽核對每個欄位做型別與格式斷言，問「這是不是一個電話號碼」而不是「這裡有沒有東西」。寫入端同樣先斷言再組 SQL。",
+        "verification": "全表重跑後僅 WCC-002 一格不合格；HSF-007 為市話（07 區碼、單破折號格式，與其餘各列的 4-3-3 手機格式不同），經確認為合法值，屬正則過嚴造成的誤報"
+      },
+      "principle": {
+        "statement": "缺漏有三種形狀：空的、舊的、以及填了但不是值的。第三種最難發現，因為它同時通過空值檢查與跨來源比對。只有對內容做格式斷言才攔得到。人在紙本與試算表裡標註「未取得」「無」「待補」是常態，不是異常。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "稽核條件寫成 is not null / != '' / 非空白",
+        "欄位型別是自由文字，但語意上只接受特定格式",
+        "盤點報告出現「某處有、某處沒有」的不一致，卻沒有實際讀出那個值"
+      ],
+      "related": {
+        "lessons": [
+          "LL-2026-09-16-01",
+          "LL-2026-08-14-03"
+        ],
+        "journal": [
+          "2026-09-18.yaml#findings.2"
+        ],
+        "memory": []
+      },
+      "used_on": []
+    },
+    {
+      "id": "LL-2026-09-18-02",
+      "title": "timestamptz 直接取 ::date 走 UTC，台北午夜整點會退成前一天",
+      "date_learned": "2026-09-18",
+      "status": "resolved",
+      "severity": "low",
+      "domains": [
+        "data-integrity",
+        "audit"
+      ],
+      "context": "核對 pii_patients.withdrawn_at 與 2026-09-02.yaml 記載的 HSF-006 退出日。",
+      "symptom": "查詢以 withdrawn_at::date 取值得到 2026-08-31，日誌記載為 09-01，看起來像差一天的實質錯誤。",
+      "root_cause": {
+        "statement": "withdrawn_at 為 timestamptz，值是 2026-09-01 00:00:00+08。::date 在 UTC 下算出 2026-08-31。台北時間的午夜整點必然落在前一個 UTC 日。"
+      },
+      "evidence": {
+        "grade": "direct",
+        "items": [
+          "(withdrawn_at at time zone 'Asia/Taipei') 回傳 2026-09-01 00:00:00，與 2026-09-02.yaml 一致"
+        ]
+      },
+      "consequence": "退出日在臨床研究裡決定資料保留範圍，差一天看起來像實質錯誤，會觸發一輪不必要的追查。本專案所有時間欄位都是 timestamptz，且人工登錄的日期常落在午夜整點，這個陷阱會重複出現。",
+      "resolution": {
+        "approach": "凡是要拿日期與日誌、紙本或對照表比對的查詢，一律先 at time zone 'Asia/Taipei' 再取日期。",
+        "verification": "同一批查詢改寫後，17 例的 enrolled_at 與 withdrawn_at 均與紀錄一致"
+      },
+      "principle": {
+        "statement": "跨時區的時間戳轉成日期時，轉換點就是語意的分界。比對的另一邊若是人寫下的當地日期，就必須先轉到當地時區——午夜前後的值會系統性地偏一天，而且只偏那些值，看起來像零星錯誤而不是規則性偏差。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "查詢裡出現 timestamptz_col::date 或 date(timestamptz_col)",
+        "日期比對的另一邊來自人工紀錄（日誌、紙本、Excel）",
+        "不一致剛好是一天，且集中在午夜前後的紀錄"
+      ],
+      "related": {
+        "lessons": [],
+        "journal": [
+          "2026-09-18.yaml#findings.3"
         ],
         "memory": []
       },

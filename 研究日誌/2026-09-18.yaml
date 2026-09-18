@@ -1,0 +1,211 @@
+date: 2026-09-18
+weekday: 五
+phase: 收案執行
+day: 58        # 自 2026-07-23 首例收案起算
+objective: >
+  PI 問「現在缺哪些病人資訊」。對帳查出 FIH-004、FIH-005、WCC-004 三筆在 patients 已存在、
+  對照表與 pii_patients 都沒有——2026-08-14、2026-09-16 之後同一個 failure mode 第三次發生。
+  當日補齊三處。過程中另外兩件比補登本身更值得記：一是我的稽核把一個佔位字串讀成了資料，
+  二是一個看似的日期不一致其實是 UTC 轉換造成的假警報。
+  未改動 production schema，未部署。
+
+# 註：本檔位於公開 repo，只記錄機制層級資訊。
+# 受試者姓名、病歷號、聯絡方式與加密金鑰一律不寫入，僅以 Study ID 指涉。
+
+trigger:
+  summary: PI 要求盤點缺漏，隨後提供三筆新收案的個資，並裁示處理 WCC-002 的電話欄
+  event_time: 2026-09-18T06:57:00Z   # 台灣時間 14:57
+
+findings:
+  - id: 1
+    severity: high
+    issue: 三筆收案在 patients 已存在，對照表與 pii_patients 都沒有（同一 failure mode 第三次）
+    detail: >
+      FIH-004、FIH-005、WCC-004 皆於 2026-09-17 晚間 19:37–19:54 之間自 App 註冊。
+      三人都已在使用 App：FIH-004 有 2 筆回報、WCC-004 有 1 筆、FIH-005 手術日為 09-18 尚無回報。
+      WCC-004 的 surgical_records 已由主刀醫師填入，FIH-004、FIH-005 尚缺。
+      前兩次分別為 2026-08-14（HSF-003/004/005）與 2026-09-16（HSF-007/CYH-001）。
+    detected_by: CLAUDE.md 記載的 patients ↔ pii_patients left join 對帳查詢
+    consequence: >
+      與前兩次相同：App 與 dashboard 只讀 patients，缺漏期間系統行為完全正常，
+      不一致在 schema 層面合法，不會有任何錯誤訊息。
+      值得注意的是間隔正在縮短——第一次到第二次 33 天，第二次到第三次 2 天，
+      而收案速率在上升（09-17 一晚三例）。人工登錄這一步的漏失率不會自己好轉。
+    fix: 當日補齊 pii_patients 三列與對照表第 20–22 列，對帳查詢回傳空集合，三處對齊在 17 筆
+
+  - id: 2
+    severity: medium
+    issue: 稽核把佔位字串讀成資料，誤報一項不存在的不一致
+    detail: >
+      第一份報告指出「WCC-002 對照表有聯絡電話、pii_patients.phone_enc 為 NULL，兩邊不一致」。
+      實際上該格內容是字串「未取得」，不是號碼。phone_enc = NULL 才是正確表示法，沒有東西可補。
+      誤判來自稽核腳本以「非空白」判定已填。
+    consequence: >
+      這是缺漏的第三種形狀。2026-09-16 記錄了兩種——空的、舊的；今天這種是「填了但不是值」，
+      它同時通過 is null 查詢與目視的非空檢查，比前兩種都更難發現。
+      代價是一次誤報：若 PI 照該報告去「補」，會去找一個從來沒取得過的號碼。
+    fix: >
+      稽核改用格式斷言而非存在性檢查。電話欄斷言 ^0\d{1,3}-\d{3,4}-\d{3,4}$、
+      病歷號 ^\d{7,8}$、出生日期須為 datetime 型別。重跑後對照表 17 列僅 WCC-002 一格不合格。
+
+  - id: 3
+    severity: low
+    issue: withdrawn_at 與日誌記載差一天，是 UTC 轉換造成的假警報
+    detail: >
+      查核時 pii_patients.withdrawn_at::date 顯示 HSF-006 為 2026-08-31，
+      而 2026-09-02.yaml 記載退出日為 09-01。改以 at time zone 'Asia/Taipei' 取值後為
+      2026-09-01 00:00:00，資料正確。timestamptz 的 ::date 走 UTC，台北時間午夜整點會退一天。
+    consequence: >
+      差一天的日期不一致在臨床研究裡看起來像實質錯誤（退出日影響資料保留範圍），
+      容易觸發一輪不必要的追查。本專案所有時間欄位都是 timestamptz，這個陷阱會重複出現。
+    fix: 對 timestamptz 做日期比對一律先 at time zone 'Asia/Taipei'，不直接 ::date
+
+  - id: 4
+    severity: info
+    issue: 2026-09-16 的 follow-up D4 已可關閉
+    detail: >
+      WCC-003 與 CYH-001 的 surgical_records 已分別於 09-16、09-17 補入，
+      術式、痔瘡分級、縫合材料、能量器械、麻醉方式皆有值，非空殼列。
+      原決策是延後至分析階段自院內手術紀錄補登，實際上主刀醫師自行填了。
+    consequence: CRF 表單一的預填來源已齊，該 follow-up 不需帶到分析階段
+
+  - id: 5
+    severity: high
+    issue: 稽核報告的引文把一筆受試者聯絡電話寫進了日誌草稿（未 commit，已移除）
+    detail: >
+      格式斷言重跑後有兩格不合格，其中 HSF-007 是市話、格式合法。
+      為了說明「為什麼正則誤判」，草稿在 findings 與 lessons_learned 裡直接引用了該號碼。
+      commit 前的 PII 掃描只比對了當日新增三筆的姓名、病歷號與電話，
+      沒有涵蓋既有受試者的識別資料，所以掃描通過。移除後才 commit，未進入版本歷史。
+    consequence: >
+      這個 repo 是公開的。若 commit 並 push，撤回需要改寫歷史，而 GitHub 的快取與
+      既有 clone 不保證跟著消失。實質風險等同外流。
+    root_cause: >
+      引用具體值來佐證「這個值為什麼合法」是稽核報告的自然寫法，而它與去識別化原則直接衝突。
+      掃描清單是照「今天處理了誰」建的，不是照「檔案裡可能出現誰」建的——
+      而誤報的引文必然來自既有個案，正好落在清單外。
+    fix: >
+      改以特徵描述取代值本身（「07 區碼、單破折號格式，與其餘各列的 4-3-3 手機格式不同」）。
+      掃描改為格式導向：對日誌檔斷言不得出現 \d{7,} 連續數字串與 0\d{1,3}-\d{3,4}-\d{3,4}，
+      不再依賴逐一列舉當事人。
+
+hypotheses_ruled_out:
+  - hypothesis: WCC-002 的聯絡電話在對照表有、在 pii_patients 沒有，兩邊不一致
+    disproved_by: >
+      讀取該儲存格實際內容為字串「未取得」，長度 3、非數字。兩邊其實一致——都沒有這筆資料。
+      原判斷來自稽核腳本的「非空白即已填」規則。
+
+  - hypothesis: HSF-006 的 withdrawn_at 記錯了一天
+    disproved_by: >
+      at time zone 'Asia/Taipei' 取值為 2026-09-01 00:00:00，與 2026-09-02.yaml 一致。
+      ::date 對 timestamptz 走 UTC，台北午夜整點會退一天。
+
+  - hypothesis: 列出空白格加上與 DB 逐欄比對，就涵蓋了所有缺漏形狀
+    disproved_by: >
+      2026-09-16 定的兩趟稽核（查 NULL、比對來源）都通不過「未取得」這種佔位字串——
+      它非空、且 DB 端同樣沒有值，兩趟都判它一致。要抓只能對欄位內容做格式斷言。
+
+decisions:
+  - id: D1
+    topic: 新增三列在對照表中的排序依據
+    decision: 依 patients.created_at（註冊時序）排序，序號 15=FIH-005、16=WCC-004、17=FIH-004
+    rationale: >
+      三筆收案日期同為 09-17，但手術日期不同（FIH-005 為 09-18，另兩筆為 09-17），
+      兩種排序會給出不同結果。既有 17 列剛好兩種排序一致，無法從中判讀慣例。
+      取註冊時序是因為「序號」在一份收案對照表裡指收案順序，且 created_at 是唯一有權威來源、
+      不會並列的欄位。手術日期另有專欄，排序資訊不會遺失。
+    reversible: 是。若 PI 偏好手術日期序，三列對調即可，不影響任何其他欄位
+
+  - id: D2
+    topic: 三筆新收案的收案狀態
+    decision: 三筆皆填「追蹤中」，對應 patients.study_status = active
+    rationale: >
+      對照表狀態欄的權威來源是 DB。FIH-005 雖然手術當日、尚無回報，DB 已是 active，
+      填「已簽同意書」會製造 2026-09-16 finding 2 那種「填了但過期」的格子。
+    note: 2026-09-16 D2 的中止介入門檻只能在 POD 30 後判定，三筆皆不適用
+
+changes:
+  production_schema: none
+  deployments: none
+  data:
+    - public.pii_patients 新增 FIH-004、FIH-005、WCC-004 三列（enrolled_at 取 patients.created_at）
+    - 收案對照表新增第 20、21、22 列（序號 15、16、17），樣式自第 19 列 copy(_style) 整列複製
+  未異動:
+    - WCC-002 的 phone_enc 維持 NULL（見 finding 2，無資料可補）
+    - 對照表回診三欄、FIH-001／HSF-003 的收案狀態（待 PI 裁示，見 follow_ups）
+  備份:
+    - 收案對照表.bak-20260918.xlsx（補登前）
+
+verification:
+  - 寫入前對三筆資料做格式斷言（Study ID、出生日期、病歷號、電話、姓名字元範圍），全數通過後才組 SQL
+  - 密文長度減 66 檢核：三筆皆 name 9／birth 10／mrn 8／phone 10（未解密）
+  - enrolled_at = patients.created_at 三筆皆為 true
+  - pii_access_log 三筆 access_type=insert 且 access_reason 非 null（SET LOCAL 在 Management API 的
+    /database/query 內有效，該端點以單一 transaction 執行）
+  - 孤兒對帳（public.patients left join public.pii_patients，排除 TEST-001）回傳空集合
+  - 三處筆數對齊：patients 17（排除 TEST-001）／pii_patients 17／surgical_records 15
+  - 對照表新列樣式與第 19 列 14/14 相等；反向以仍空白的第 23 列驗證 0/14 相等，確認樣式複製非空操作
+  - 寫入前斷言目標列的 Study ID 欄為空，避免覆蓋既有列
+  - 主刀醫師字串比對既有集合後才寫入，確保落在 G6:G55 下拉清單的合法值內
+  - 資料驗證範圍 G6:G55、M6:M55 與四個合併儲存格於寫入後均未受影響
+  - 日期欄 number_format 為 yyyy-mm-dd
+  - 全表重跑格式斷言：17 列中僅 WCC-002 電話欄不合格（見 finding 2）；
+    HSF-007 為市話（07 區碼、單破折號格式），正則過嚴造成誤報，已確認為合法值
+
+follow_ups:
+  - item: FIH-001 與 HSF-003 的收案狀態
+    detail: >
+      兩例最後回報 POD 9 與 POD 11，符合 2026-09-16 D2 的中止介入門檻。
+      對照表 FIH-001 仍寫「追蹤中」而 DB 為 completed（過期值），HSF-003 寫「已完成」。
+      2026-09-16 已列為待裁示，本次 PI 未回應，持續未決。
+    owner: PI
+    status: 未決（第二次列出）
+
+  - item: WCC-002 的聯絡電話
+    detail: 對照表為「未取得」、pii_patients 為 NULL。PI 裁示要補，但目前無資料來源
+    next: 確認是否已取得號碼；若確定取不到，建議把「未取得」改成留空並在備註記明
+    owner: PI
+
+  - item: FIH-004 與 FIH-005 的 surgical_records
+    detail: 兩例缺，CRF 表單一的痔瘡分級、術式、縫合方式、能量器械、麻醉方式靠此表預填
+    owner: 主刀醫師（FIH）
+
+  - item: 對照表回診日期欄
+    detail: >
+      WCC-001／WCC-002／FIH-001／FIH-002／FIH-003／WCC-003／HSF-007 缺第二、三次；
+      HSF-002／HSF-004／HSF-005 缺第三次；HSF-006、CYH-001 三欄全空。需 PI 提供門診紀錄
+    owner: PI
+
+  - item: 人工登錄漏失的機制性對策
+    detail: >
+      三次都靠事後對帳查出，且間隔在縮短。既有的 daily_summary.py（launchd，00:00 推播）
+      每天已經在讀 patients，加上孤兒對帳只是多一個查詢
+    next: 提案把 left join 對帳加進每日推播；PI 未裁示前不動
+    owner: PI
+    status: 待裁示
+
+lesson_audit_has_a_third_shape: >
+  2026-09-16 記了缺漏的兩種形狀：空的、舊的。今天出現第三種——填了但不是值。
+  「未取得」這個字串非空、且 DB 端同樣沒有資料，所以查 NULL 與兩來源比對這兩趟都判它一致。
+  唯一抓得到的方式是對欄位內容做格式斷言，問「這是不是一個電話號碼」而不是「這裡有沒有東西」。
+  代價是具體的：誤報讓 PI 差點去找一個從來不存在的號碼。
+  存在性檢查回答的問題比它看起來的窄，不要拿它當完整性檢查用。
+
+lesson_timezone_before_date_comparison: >
+  timestamptz 直接 ::date 走 UTC。台北時間午夜整點（如退出日 2026-09-01 00:00+08）
+  會顯示成前一天，看起來像差一天的實質錯誤。本專案所有時間欄位都是 timestamptz，
+  凡是要拿日期跟日誌或紙本比對的查詢，先 at time zone 'Asia/Taipei'。
+
+lesson_recurrence_interval_is_the_signal: >
+  同一個 failure mode 第三次發生，但真正的訊號不是次數而是間隔：33 天、2 天。
+  收案速率上升時，依賴「記得手動登錄」的步驟漏失頻率跟著上升，而偵測方式仍然是人想到要去查。
+  補登本身每次都只花幾分鐘，所以每次都很容易當成小事處理掉，不去動那個會持續產生它的機制。
+
+lesson_deidentification_scan_must_be_format_based: >
+  commit 前的 PII 掃描若照「今天處理了誰」列舉姓名與號碼，就只擋得住當天的主角。
+  今天差點外流的是一筆既有受試者的市話，它出現在日誌裡的理由是要說明一個正則誤報
+  ——引用具體值來佐證「這個值為什麼合法」，是稽核報告最自然的寫法，
+  而它與去識別化直接衝突，且必然引用到清單外的人。
+  掃描要問「這段文字裡有沒有長得像識別資料的東西」，不是「有沒有這幾個人的識別資料」。
+  對照組是有用的：同一次掃描擋不住的東西，格式斷言一次就抓到——
+  這和 finding 2 的教訓是同一件事的兩面，存在性清單答不了完整性問題。
