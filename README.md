@@ -20,7 +20,7 @@ An IRB-study platform for daily symptom reporting, longitudinal trends, server-s
 
 **Live system:** [prototype-zeta-black.vercel.app](https://prototype-zeta-black.vercel.app) · Authentication is required for study workflows.
 
-> **Clinical research software:** This repository documents a deployed research system, not a medical device or a substitute for professional medical advice.
+> **Clinical research software:** This repository documents a deployed research system, not a medical device or a substitute for professional medical advice. 公開 demo 僅示範／去識別資料，不含真實病人個資。
 
 ## 中文研究與部署文件
 
