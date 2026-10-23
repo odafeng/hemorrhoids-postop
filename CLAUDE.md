@@ -110,6 +110,10 @@ overhead，密文長度減 66 就是明文位元組數，格式對不對一眼�
 - INSERT 前加 `SET LOCAL app.access_reason`，`fn_audit_pii_change` 才記得下來為何動這張表
 - `enrolled_at` 取 `patients.created_at`，不要用 `now()`——用 now() 記到的是補登時刻，不是收案時刻
 - 驗證用密文長度，不要解密後回傳明文
+- 加密一律用文字版 `pgp_sym_encrypt(text, key)`，不要用 `pgp_sym_encrypt_bytea`。兩者密文長度相同，
+  但文字版 `pgp_sym_decrypt` 解不開後者（ERROR 39000 "Not text data"）。HSF-008 那列就是這樣
+  寫進去的（2026-10-24 查出，待修）。驗證時除了長度，還要對每一列實際跑一次 `pgp_sym_decrypt`
+  （用 plpgsql exception 包住、只回傳模式不回傳明文），長度看不出模式差異
 
 Vault 可用之後，整段流程可以直接用 Supabase MCP 執行，不必再產生帶金鑰的 SQL 檔給 PI 手動貼上。
 
