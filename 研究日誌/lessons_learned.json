@@ -725,6 +725,11 @@
           "date": "2026-09-23",
           "context": "PI 詢問 HSF-008 收案資訊是否填齊",
           "value": "直接指向 patients ↔ pii_patients 的 left join 對帳，而不是只看對照表。這次三處齊全，是這則教訓記錄以來第一次查出無缺漏——代表 09-16 之後的登錄流程確實有跟上。"
+        },
+        {
+          "date": "2026-10-24",
+          "what": "PI 貼出五筆個資要求登記。依此教訓先跑 left join 而不是照清單補，結果清單裡的 HSF-008 已登、清單外的 WCC-005 漏登 11 天",
+          "outcome": "有效，但也是第四次。對帳查詢寫進 CLAUDE.md 兩個多月，四次全靠有人碰巧跑它；提案排進每日摘要腳本，待 PI 同意"
         }
       ]
     },
@@ -763,7 +768,14 @@
         "journal": [
           "2026-08-14.yaml#lesson_verify_before_destroying_source"
         ]
-      }
+      },
+      "used_on": [
+        {
+          "date": "2026-10-24",
+          "what": "確認 HSF-008 不必重登、以及四筆新列寫對：資料庫解密後 md5 與貼上資料的本機 md5 逐欄位比對，明文不回傳",
+          "outcome": "有效，且多抓到一件長度檢查看不到的事——HSF-008 用文字版解密直接報錯，才發現它是 bytea 模式寫入（見 LL-2026-10-24-01）"
+        }
+      ]
     },
     {
       "id": "LL-2026-08-23-01",
@@ -1530,6 +1542,58 @@
         "memory": []
       },
       "used_on": []
+    },
+    {
+      "id": "LL-2026-10-24-01",
+      "title": "一列資料可以內容全對、長度全對，卻用文件化的讀法讀不出來",
+      "date_learned": "2026-10-24",
+      "status": "open",
+      "severity": "medium",
+      "domains": [
+        "data-integrity",
+        "pii",
+        "verification"
+      ],
+      "context": "pii_patients 以 pgcrypto 對稱加密存放個資，文件寫明用 pgp_sym_encrypt 寫、pgp_sym_decrypt 讀。驗證慣例是密文長度減 66 反推明文位元組數。",
+      "symptom": "對 HSF-008 做 md5 等值檢查時 pgp_sym_decrypt 回 ERROR 39000 \"Not text data\"。其餘 17 列正常。",
+      "root_cause": {
+        "statement": "那一列是用 pgp_sym_encrypt_bytea 寫入的（來源不明，沒有日誌記錄該次寫入）。兩種模式的 PGP 封包 overhead 相同，長度檢查對兩者完全無鑑別力；存在性對帳、md5 比對（只要用對讀法）也都通過。唯一能分辨的是對每一列實際跑文件化的那個讀法。"
+      },
+      "evidence": {
+        "grade": "direct",
+        "items": [
+          "逐列以 plpgsql exception 包住 pgp_sym_decrypt：17 列回 text，HSF-008 四欄皆回 Not text data",
+          "同一把 Vault 金鑰改用 pgp_sym_decrypt_bytea 可解，md5 與來源相等——金鑰與內容都沒問題，只差封包的 text 旗標",
+          "該列 pii_access_log 的 insert 時刻與對照表檔案 mtime 在同一分鐘，對照表該列樣式也與其他列全部不同，與「走了另一條路徑」一致"
+        ]
+      },
+      "consequence": "任何依文件讀全表的程式會在那一列炸掉，錯誤訊息指向資料型別而非寫入路徑。",
+      "resolution": {
+        "approach": "本次未修（PI 未要求改既有身分資料）。修法已備：同一 transaction 內 bytea 讀出、text 寫回、enrolled_at 改為 patients.created_at。CLAUDE.md 補上「一律用文字版、驗證要逐列實跑解密」。",
+        "verification": "待修正後逐列模式掃描應為 18/18 text"
+      },
+      "principle": {
+        "statement": "驗證一筆資料「寫對了」，要用它將來會被讀取的那個方法實際讀一次。存在性、長度、甚至內容雜湊都可能在讀法不同時照樣通過。來歷不明的列（沒有日誌記它怎麼來的）優先做這個檢查。",
+        "scope": "general"
+      },
+      "recurrence_signals": [
+        "某一列的樣式、時間戳或欄位型別與其他列不同，而日誌裡找不到它的寫入紀錄",
+        "同一個編碼／加密／序列化函式有 text 與 binary 兩個版本，而驗證只看長度或筆數",
+        "錯誤訊息講的是「型別不對」而非「金鑰錯」或「資料損壞」"
+      ],
+      "related": {
+        "lessons": [
+          "LL-2026-08-14-04",
+          "LL-2026-09-23-01"
+        ],
+        "journal": [
+          "2026-10-24.yaml#findings.3",
+          "2026-10-24.yaml#lesson_run_the_documented_reader_on_every_row"
+        ],
+        "memory": [
+          "pii-handling-policy"
+        ]
+      }
     }
   ],
   "open_items": [
