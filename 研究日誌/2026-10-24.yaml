@@ -45,8 +45,12 @@ findings:
     consequence: 去識別化資料持續累積中，身分對應兩份副本一份都沒有
     fix: >
       PI 於 01:02 貼出資料，隨即以同一流程補齊 pii_patients 與對照表第 28 列（序號 23），
-      enrolled_by 取 patients.surgeon_id。結構性修法見 follow_ups：把 left join 放進
-      已經每天在跑的每日摘要腳本，缺漏當天推播到手機。
+      enrolled_by 取 patients.surgeon_id。
+      結構性修法同日完成（PI 01:21 同意）：每日摘要腳本（repo 外，~/.hemorrhoids-daily/daily_summary.py）
+      新增一段，每天跑 patients left join pii_patients，有缺就列出 Study ID、收案日與已漏天數，
+      並把 priority 抬到 high。只讀 study_id，不碰密文。
+      值得記的是：漏登的那 11 天裡，這支摘要每天都列著 WCC-005 的回報，
+      因為它跟 App、dashboard 一樣只讀 patients——正是 LL-2026-08-14-03 說的那個形狀。
 
   - id: 3
     severity: medium
@@ -56,7 +60,7 @@ findings:
       逐列掃描：其餘 17 列四欄皆為 text 模式，只有 HSF-008 四欄全是 bytea 模式。
       用同一把 Vault 金鑰改走 pgp_sym_decrypt_bytea 可解，且 md5 與貼上資料相等——
       金鑰沒換、內容沒壞，差的是 PGP 封包的 text 旗標，也就是寫入時用了 pgp_sym_encrypt_bytea。
-      來源：pii_access_log 有那次 insert（09-22 16:29:58Z，台灣 09-23 00:29），accessed_by 為 postgres、
+      來源：pii_access_log 有那次 insert（台灣時間 09-23 00:29），accessed_by 為 postgres、
       access_reason 寫「PI-requested enroll PII HSF-008」——是一個走 Management API 的 session 依 PI 要求寫的，
       用了 _bytea 版函式與 now()，而且沒有留日誌。對照表檔案 mtime 09-23 00:30，同一分鐘；
       09-23 的日誌（01:21 開始）只做了查核，把它當成已經對齊的既有資料。
@@ -75,8 +79,8 @@ findings:
     severity: medium
     issue: HSF-008 的 enrolled_at 比 patients.created_at 晚 6 小時 35 分；09-23 日誌說兩者對齊
     detail: >
-      直接相等比對：pii_patients.enrolled_at = 2026-09-22 16:29:58Z，patients.created_at = 09-22 09:55:01Z。
-      enrolled_at 記到的是補登時刻，正是 CLAUDE.md 寫明不要用 now() 的那種值。
+      直接相等比對：enrolled_at 比 patients.created_at 晚 06:34:56，落在補登當下，
+      正是 CLAUDE.md 寫明不要用 now() 的那種值。
       09-23 日誌 finding 1 寫「enrolled_at 對齊 patients.created_at 而非補登時刻」，
       verification 列的是「consent 與 enrolled 欄位」，沒有寫比對方法——以今天的結果看，
       當時至多比了日期，沒有比到時刻。
@@ -163,6 +167,9 @@ verification:
     consent_date = 10-13 皆 true；DO 區塊內隨即以文字版讀回四欄；pii_access_log 一筆 insert 帶 reason；
     對照表第 28 列值逐欄比對通過、14/14 樣式與第 27 列相等、合併與資料驗證範圍未變
   - 最終對帳：孤兒查詢回傳空集合；patients 23（排除 TEST-001）／pii_patients 23／對照表 Study ID 23
+  - 每日摘要腳本：unittest 5/5 通過（新增 2 則：有孤兒時列出並 priority=high、無孤兒時無該段且 priority 不變）；
+    同兩則對改動前的備份腳本跑，有孤兒那則轉紅（mutation check）；
+    以 push 被 mock 的方式對 production 乾跑一次，孤兒查詢以 postgres 角色執行無誤、回傳空集合、摘要正常組出
   - 未解密任何欄位回傳明文；金鑰未離開資料庫
 
 deliberately_not_done:
@@ -177,7 +184,10 @@ follow_ups:
     status: 已完成（PI 同意後同日修正，見 finding 3／4）
   - item: 把 patients ↔ pii_patients left join 排進每日摘要腳本，缺漏當天推播
     detail: 第四次同一 failure mode。對帳查詢寫進 CLAUDE.md 已兩個多月，四次都靠人碰巧跑它。腳本在 repo 外，改動不進版本控制，但這是目前唯一每天會自己跑的東西
-    owner: 待 PI 同意後實作
+    status: 已完成（PI 同意後同日實作，備份 daily_summary.py.bak-20261024；下次 00:00 排程起生效）
+  - item: 每日摘要的 last-run.log 時戳是 23:00，plist 排的是 00:00
+    detail: 腳本內時區寫死 UTC+8，launchd 走系統時區；兩者差一小時表示這台機器的系統時區不是台北。
+      target_date 用「現在減一小時」取日期，目前剛好仍指到正確的那一天，但這是靠偏移量剛好為一小時。僅記錄，未處理
   - item: 09-23 的 README 日期索引列缺漏
     status: 僅記錄，未補
 
