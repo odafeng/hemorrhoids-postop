@@ -729,7 +729,7 @@
         {
           "date": "2026-10-24",
           "what": "PI 貼出五筆個資要求登記。依此教訓先跑 left join 而不是照清單補，結果清單裡的 HSF-008 已登、清單外的 WCC-005 漏登 11 天",
-          "outcome": "有效，但也是第四次。對帳查詢寫進 CLAUDE.md 兩個多月，四次全靠有人碰巧跑它；提案排進每日摘要腳本，待 PI 同意"
+          "outcome": "有效，但也是第四次。PI 當場補資料，WCC-005 同日補齊，三處各 23 筆。對帳查詢寫進 CLAUDE.md 兩個多月，四次全靠有人碰巧跑它；提案排進每日摘要腳本，待 PI 同意"
         }
       ]
     },
@@ -1547,7 +1547,7 @@
       "id": "LL-2026-10-24-01",
       "title": "一列資料可以內容全對、長度全對，卻用文件化的讀法讀不出來",
       "date_learned": "2026-10-24",
-      "status": "open",
+      "status": "resolved",
       "severity": "medium",
       "domains": [
         "data-integrity",
@@ -1564,13 +1564,14 @@
         "items": [
           "逐列以 plpgsql exception 包住 pgp_sym_decrypt：17 列回 text，HSF-008 四欄皆回 Not text data",
           "同一把 Vault 金鑰改用 pgp_sym_decrypt_bytea 可解，md5 與來源相等——金鑰與內容都沒問題，只差封包的 text 旗標",
-          "該列 pii_access_log 的 insert 時刻與對照表檔案 mtime 在同一分鐘，對照表該列樣式也與其他列全部不同，與「走了另一條路徑」一致"
+          "該列 pii_access_log 的 insert 時刻與對照表檔案 mtime 在同一分鐘，對照表該列樣式也與其他列全部不同，與「走了另一條路徑」一致",
+          "pii_access_log 的那筆 insert 寫著 PI-requested enroll PII HSF-008、accessed_by postgres：是一個走 Management API 的 session 寫的，用了 _bytea 版與 now()，沒留日誌"
         ]
       },
       "consequence": "任何依文件讀全表的程式會在那一列炸掉，錯誤訊息指向資料型別而非寫入路徑。",
       "resolution": {
-        "approach": "本次未修（PI 未要求改既有身分資料）。修法已備：同一 transaction 內 bytea 讀出、text 寫回、enrolled_at 改為 patients.created_at。CLAUDE.md 補上「一律用文字版、驗證要逐列實跑解密」。",
-        "verification": "待修正後逐列模式掃描應為 18/18 text"
+        "approach": "PI 同意後同一 session 修正：單一 transaction 內以 pgp_sym_decrypt_bytea 讀出、pgp_sym_encrypt 文字版寫回四欄，enrolled_at 改為 patients.created_at，同一區塊內隨即以文字版讀回，解不開即回滾。CLAUDE.md 補上「一律用文字版、驗證要逐列實跑解密」。",
+        "verification": "修正後全表 22 列逐列模式掃描 bytea 為 0；該列文字版解密 md5 與來源 4/4 相等；pii_access_log 記到 update 帶 reason"
       },
       "principle": {
         "statement": "驗證一筆資料「寫對了」，要用它將來會被讀取的那個方法實際讀一次。存在性、長度、甚至內容雜湊都可能在讀法不同時照樣通過。來歷不明的列（沒有日誌記它怎麼來的）優先做這個檢查。",

@@ -6,9 +6,11 @@ objective: >
   PI 貼出五筆收案個資（HSF-008 至 HSF-012）要求登記 PII。
   先對帳再動手：只有 HSF-009～012 四筆要補，HSF-008 早在 09-22 就寫入了，
   內容與這次貼上的資料逐欄位 md5 相等。四筆寫進 pii_patients 與對照表第 24–27 列，三處對齊。
-  順帶查出兩件事。WCC-005（10-13 收案）在 pii_patients 與對照表都沒有，同一個 failure mode 第四次。
+  順帶查出兩件事。WCC-005（10-13 收案）在 pii_patients 與對照表都沒有，同一個 failure mode 第四次；
+  PI 當場補給資料，同一 session 補齊，三處各 23 筆對齊。
   HSF-008 那一列的四個密文是用 bytea 版函式加密的，文件化的文字版 pgp_sym_decrypt 解不開；
   它的 enrolled_at 也是補登時刻而不是 patients.created_at——09-23 的日誌寫它「對齊」，當時並沒有真的比對。
+  兩處異常經 PI 同意後於同一 session 修正：四欄在資料庫內以 bytea 讀出、文字版寫回，enrolled_at 改為 created_at。
   未改動 production schema，未部署。
 
 # 註：本檔位於公開 repo，只記錄機制層級資訊。
@@ -42,7 +44,8 @@ findings:
     detected_by: 同上的 left join，這次是為了確認 HSF-008 要不要補才順便跑到全表
     consequence: 去識別化資料持續累積中，身分對應兩份副本一份都沒有
     fix: >
-      待 PI 提供 WCC-005 個資後補登。結構性修法見 follow_ups：把 left join 放進
+      PI 於 01:02 貼出資料，隨即以同一流程補齊 pii_patients 與對照表第 28 列（序號 23），
+      enrolled_by 取 patients.surgeon_id。結構性修法見 follow_ups：把 left join 放進
       已經每天在跑的每日摘要腳本，缺漏當天推播到手機。
 
   - id: 3
@@ -53,15 +56,20 @@ findings:
       逐列掃描：其餘 17 列四欄皆為 text 模式，只有 HSF-008 四欄全是 bytea 模式。
       用同一把 Vault 金鑰改走 pgp_sym_decrypt_bytea 可解，且 md5 與貼上資料相等——
       金鑰沒換、內容沒壞，差的是 PGP 封包的 text 旗標，也就是寫入時用了 pgp_sym_encrypt_bytea。
-      來源不明：pii_access_log 的 insert 時刻 09-22 16:29:58Z（台灣 09-23 00:29），
-      對照表檔案 mtime 09-23 00:30，同一分鐘；09-23 的日誌（01:21 開始）只做了查核，沒有寫入紀錄。
+      來源：pii_access_log 有那次 insert（09-22 16:29:58Z，台灣 09-23 00:29），accessed_by 為 postgres、
+      access_reason 寫「PI-requested enroll PII HSF-008」——是一個走 Management API 的 session 依 PI 要求寫的，
+      用了 _bytea 版函式與 now()，而且沒有留日誌。對照表檔案 mtime 09-23 00:30，同一分鐘；
+      09-23 的日誌（01:21 開始）只做了查核，把它當成已經對齊的既有資料。
       對照表第 23 列的樣式（填色 F2F7FB、新細明體、姓名靠左）也與其他 22 列全部不同，
       與「這一筆走了另一條路徑」的推論一致。
       密文長度檢查看不出這件事：兩種模式的 overhead 同為 66 bytes，長度減 66 都得到正確的明文位元組數。
     consequence: >
       任何依文件用 pgp_sym_decrypt 讀全表的程式（匯出、分析前的身分對應）會在 HSF-008 那列炸掉，
       而且錯誤訊息指向「資料型別」，不指向「這一列的寫法不同」。
-    fix: 未處理，待 PI 裁示（見 deliberately_not_done 與 follow_ups）
+    fix: >
+      已修（PI 於台灣時間 01:01 同意）。單一 transaction 內 UPDATE：四欄以 pgp_sym_decrypt_bytea 讀出、
+      convert_from UTF8、pgp_sym_encrypt 文字版寫回，明文不離開資料庫；同一區塊內隨即以文字版 pgp_sym_decrypt
+      讀一次四欄，解不開就整個回滾。帶 SET LOCAL app.access_reason，pii_access_log 記到 access_type=update。
 
   - id: 4
     severity: medium
@@ -73,7 +81,7 @@ findings:
       verification 列的是「consent 與 enrolled 欄位」，沒有寫比對方法——以今天的結果看，
       當時至多比了日期，沒有比到時刻。
     consequence: 一筆收案時刻記錯 6.5 小時；對本研究的分析影響為零（收案時刻不進任何分析），但日誌的可信度受影響
-    fix: 未處理，待 PI 裁示
+    fix: 已修，與 finding 3 同一個 UPDATE，enrolled_at := patients.created_at
 
   - id: 5
     severity: low
@@ -106,12 +114,12 @@ hypotheses_ruled_out:
       唯一能分辨的方法是對每一列實際跑文件化的解密函式（可用 plpgsql exception 包起來逐列判定，不回傳明文）。
 
 decisions:
-  - decision: HSF-008 的兩處異常（bytea 模式、enrolled_at）本次不修
+  - decision: HSF-008 的兩處異常（bytea 模式、enrolled_at）先報不修，PI 同意後才修
     rationale: >
-      PI 要的是登記四筆新資料，不是修改一筆既有的身分資料。09-23 的教訓是誤報差一點動到正確資料；
-      這次雖然確定是異常，但內容本身正確，修法涉及重新加密 production 的個資列，應由 PI 決定。
-      修法已準備好：在同一 transaction 內以 pgp_sym_decrypt_bytea 讀出、pgp_sym_encrypt 寫回四欄，
-      enrolled_at 改為 patients.created_at，帶 SET LOCAL app.access_reason，明文不離開資料庫。
+      PI 原本要的是登記四筆新資料，不是修改一筆既有的身分資料。09-23 的教訓是誤報差一點動到正確資料；
+      這次雖然確定是異常，但內容本身正確，重新加密 production 的個資列應由 PI 決定。
+      報告後 PI 於 01:01 回「幫我修」，隨即執行：同一 transaction 內以 pgp_sym_decrypt_bytea 讀出、
+      pgp_sym_encrypt 寫回四欄，enrolled_at 改為 patients.created_at，帶 SET LOCAL app.access_reason，明文不離開資料庫。
 
   - decision: 新列樣式來源取第 22 列而非前一列
     rationale: 見 finding 5
@@ -123,11 +131,14 @@ changes:
     - public.pii_patients 新增 HSF-009、HSF-010、HSF-011、HSF-012 四列
       （pgp_sym_encrypt 文字模式；enrolled_at 取 patients.created_at；consent_date 取 patients.consent_date 轉台灣時間；enrolled_by 取主刀醫師代碼）
     - 收案對照表新增第 24–27 列（序號 19–22），樣式自第 22 列 copy(_style) 整列複製，電話帶破折號，病歷號存為字串（沿用第 20 列起的型別）
+    - public.pii_patients HSF-008 一列 UPDATE：四個密文由 bytea 模式改寫為文字模式（內容不變），enrolled_at 由補登時刻改為 patients.created_at
+    - public.pii_patients 新增 WCC-005 一列（同上規則，enrolled_by 取 patients.surgeon_id）
+    - 收案對照表新增第 28 列（序號 23，WCC-005），樣式自第 27 列整列複製；依附加順序排在 HSF-009～012 之後，收案日期欄記實際的 10-13
   未異動:
-    - HSF-008 的 pii_patients 列與對照表第 23 列
-    - WCC-005（無資料可補）
+    - 對照表第 23 列（HSF-008，內容正確，僅樣式與其他列不同）
   備份:
-    - 收案對照表.bak-20261024.xlsx（補登前，md5 與原檔相等，git check-ignore 命中 .gitignore:38）
+    - 收案對照表.bak-20261024.xlsx（四筆補登前，md5 與原檔相等，git check-ignore 命中 .gitignore:38）
+    - 收案對照表.bak-20261024-2.xlsx（WCC-005 補登前）
 
 verification:
   - 寫入前對四筆做格式斷言（Study ID、姓名字元範圍、出生年份區間、病歷號位數、手機 ^09\d{8}$），全數通過後才組 SQL
@@ -144,22 +155,26 @@ verification:
     寫入後重開檔案，四列 14/14 樣式與第 22 列相等、值逐欄比對通過、E/F/I 欄 number_format 為 yyyy-mm-dd；
     反向以仍空白的第 28 列驗證 11/14 相等（空白列本就與第 22 列共用大部分樣式），
     四個合併範圍與兩個資料驗證範圍未變；Study ID 總數 22
+  - HSF-008 修正前：bytea 解密 md5 與來源相等 4/4、enrolled_at 與 created_at 差 06:34:56、長度 9/10/8/10
+  - HSF-008 修正後：文字版 pgp_sym_decrypt 解密 md5 與來源相等 4/4、enrolled_at = created_at 為 true、長度仍為 9/10/8/10、
+    consent_signed／consent_date／enrolled_by 未變；pii_access_log 多一筆 access_type=update 且 access_reason 非 null
+  - 修正後全表 22 列逐列模式掃描：21 列四欄皆 text，1 列（WCC-002）三欄 text 加 phone null；bytea 為 0
+  - WCC-005：格式斷言通過；密文長度 9/10/8/10；文字版解密 md5 與來源 4/4 相等；enrolled_at = created_at、
+    consent_date = 10-13 皆 true；DO 區塊內隨即以文字版讀回四欄；pii_access_log 一筆 insert 帶 reason；
+    對照表第 28 列值逐欄比對通過、14/14 樣式與第 27 列相等、合併與資料驗證範圍未變
+  - 最終對帳：孤兒查詢回傳空集合；patients 23（排除 TEST-001）／pii_patients 23／對照表 Study ID 23
   - 未解密任何欄位回傳明文；金鑰未離開資料庫
 
 deliberately_not_done:
-  - HSF-008 未重新加密、enrolled_at 未更正——待 PI 裁示（decisions 1）
-  - WCC-005 未補登——本 session 無其資料
   - 對照表第 23 列樣式未統一——不動既有資料
   - 未改動 production schema，未部署
   - 未 push——依全域規則等 PI 確認（0d917d3 亦尚未 push）
 
 follow_ups:
   - item: WCC-005 的 PII 補登
-    owner: PI 提供資料後補
-    status: 待資料
+    status: 已完成（PI 同日提供資料）
   - item: HSF-008 兩處異常是否修正
-    owner: PI 裁示
-    status: 修法已備（見 decisions 1）
+    status: 已完成（PI 同意後同日修正，見 finding 3／4）
   - item: 把 patients ↔ pii_patients left join 排進每日摘要腳本，缺漏當天推播
     detail: 第四次同一 failure mode。對帳查詢寫進 CLAUDE.md 已兩個多月，四次都靠人碰巧跑它。腳本在 repo 外，改動不進版本控制，但這是目前唯一每天會自己跑的東西
     owner: 待 PI 同意後實作
