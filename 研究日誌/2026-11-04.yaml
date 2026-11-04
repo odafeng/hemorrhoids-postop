@@ -1,0 +1,141 @@
+date: 2026-11-04
+weekday: 三
+phase: 收案執行
+day: 105       # 自 2026-07-23 首例收案起算（含首日，與 09-02 = 42 同算法）
+objective: >
+  登錄 HSF-013 於術後第一週因傷口感染、術後發燒重返急診（口服抗生素後離院，門診追蹤）。
+  查資料時確認 fever 規則在同日正確觸發，是本研究第一則對應到確診事件的 fever 警示；
+  同時發現 09-02 提出的 v2 傷口規則在全體受試者中幾乎人人觸發，不具鑑別力。
+  另查出 HSF-013 為 pii_patients 第五次漏登。未改動 production schema，未部署。
+
+# 註：本檔位於公開 repo，只記錄機制層級資訊。
+# 受試者姓名、病歷號、聯絡方式、邀請碼與加密金鑰一律不寫入，僅以 Study ID 指涉。
+# 日曆日期、事件 POD 與精確時刻僅存於 DB 與對照表。本檔檔名即日期，
+# 任何相對時間（POD、「至今 N 天」「隔日」）都能據以反推，故事件時點只寫到週。
+
+trigger:
+  summary: >
+    PI 告知 HSF-013 術後發燒返急診，請求登錄。補述：傷口感染，給口服抗生素，門診追蹤。
+
+clinical_event:
+  study_id: HSF-013
+  timing: 術後第一週     # 精確 POD 見 healthcare_utilization；已用 surgery_date 核對，非僅依口述
+  diagnosis: 傷口感染（術後發燒）
+  management: 急診給予口服抗生素後離院，門診追蹤
+  classification: 非預期急診；未住院、未再手術
+  source: PI 口述（2026-11-04）。未查急診病歷
+
+findings:
+  - id: 1
+    severity: medium
+    issue: fever 規則正確觸發，但確認花了約 15 小時
+    detail: >
+      急診當天病人回報 fever = true，同一筆回報觸發 alert（fever, danger）。
+      這是全研究第二則 fever 警示：第一則為 HSF-005，其後無就醫紀錄。
+      HSF-013 這一則是第一個對應到確診事件的。研究端確認時已相隔約 15 小時。
+      回報與急診的先後順序未知：PI 未說明急診時刻，病人可能是看完急診回家才回報。
+    consequence: >
+      若回報先於急診，警示等於比臨床早一步但無人即時處理；若回報在急診之後，
+      警示只是補記。兩者對論文中「警示是否有臨床價值」的敘述完全不同，需查急診掛號時間。
+      fever 屬 danger 等級，目前通知路徑（每日摘要）是日批次，不是即時的。
+
+  - id: 2
+    severity: high
+    issue: 09-02 提出的 v2 傷口規則（分泌物新出現 + 腫脹持續 ≥3 天）在全體受試者中缺乏鑑別力
+    detail: >
+      HSF-013 傷口欄位：術後頭幾天即出現「腫脹,分泌物」並持續整週，
+      表面上與 HSF-006 一樣是規則能提早數天抓到的形態。
+      但對全體受試者（排除 TEST-001）查詢：曾回報分泌物且腫脹 ≥3 天者共 12 人，
+      其中確診感染 2 人（HSF-006、HSF-013）；HSF-007 的急診原因是排尿困難。
+      有回報過分泌物的共 18 人。分泌物與腫脹是痔瘡術後的常態回報。
+    consequence: >
+      v2 不能照 09-02 的寫法實作。要有鑑別力，候選方向是「變化」而非「存在」：
+      疼痛回升、腫脹與分泌物合併新出現的發燒、或 POD 5 以後才首次出現分泌物。
+      n=2 個事件，任何規則都無法在本研究內驗證，只能列為 v2 的設計輸入。
+
+  - id: 3
+    severity: high
+    issue: HSF-013 為 pii_patients 第五次漏登
+    detail: >
+      patients 由 App 註冊流程建立；pii_patients 與對照表皆無此列，
+      漏登超過一週。10-24 起每日摘要已加入 orphan 檢查，
+      但本 session 未查證摘要這幾晚是否有列出 HSF-013。
+    consequence: >
+      若摘要有列出而無人處理，代表「排程化檢查」只解決了偵測，沒解決補登需要 PI 提供個資這一步。
+      若摘要沒列出，代表檢查本身壞了。兩者修法不同，待查（見 open_questions）。
+
+  - id: 4
+    severity: low
+    issue: CRF 表單四與 healthcare_utilization 仍不同步
+    detail: >
+      DB 有 5 列（WCC-002、HSF-006×2、HSF-007、HSF-013），表單四在本次之前只有 HSF-006 兩列。
+      WCC-002 與 HSF-007 從未寫入表單四，與 09-02 findings-5「crf_fill.py 完整實跑未做」一致。
+
+decisions:
+  - decision: healthcare_utilization 只寫一列「急診」，不寫「再住院」
+    rationale: 未住院。與 HSF-006 的兩列寫法差在是否住院。
+  - decision: HSF-013 維持 active，不填表單六
+    rationale: >
+      未住院、未再手術，不符合 SAE 形式定義；口服抗生素後的病程仍在痔瘡術後衛教範圍內，
+      不同於 HSF-006 放置 seton 後 AI 衛教內容不再適用。依 09-02 先例提議，PI 未提出異議（未明確確認）。
+  - decision: 對照表先建 HSF-013 列的非個資欄位與備註，個資欄留空
+    rationale: >
+      備註要與 DB 同一次寫入（09-02 決策），但列本身不存在。先建列，姓名／病歷號／出生日期／
+      電話留給 PI 填，備註內註明待補，避免空欄被誤讀為已完成。
+
+hypotheses_ruled_out:
+  - hypothesis: 09-02 提出的傷口規則能提早數天抓到 HSF-013，構成支持該規則的第二個案例
+    disproved_by: >
+      全體查詢：同一條件在 12 位受試者觸發，僅 2 位感染。單看事件個案只會看到命中，
+      看不到誤報；規則評估要用全體分母。
+  - hypothesis: WCC-005 對照表第 28 列尚未補登（session 記憶的 10-24 紀錄）
+    disproved_by: >
+      讀對照表第 28 列：WCC-005 已存在，非個資欄位與個資欄位皆有值，檔案最後修改為 10-24。
+      記憶中的「待處理」是較早的狀態，未隨後續補登更新。
+  - hypothesis: 讀對照表的 Python script 卡住，是檔案被 Excel 鎖定或 iCloud 未下載
+    disproved_by: >
+      無 ~$ 鎖定檔，ls 正常列出。卡住的原因是 heredoc 包在 Bash 工具的 eval 內被拆壞，
+      直譯器一直在等 stdin。改為把 script 寫進 scratchpad 檔案再執行即正常。
+      另：本機 ls 為 alias，在 pipe 內無輸出，看起來像目錄是空的，不可當作檢查依據。
+
+open_questions:
+  - 急診掛號時刻與當天回報（fever = true）的先後順序。owner：PI，查急診病歷。
+  - 每日摘要自 HSF-013 註冊以來是否有列出它為 orphan。查 launchd 摘要的推送紀錄。
+  - 是否需通報 IRB：非 SAE（未住院），預期不需要，但同 09-02 未查院內 SOP。owner：PI。
+
+changes:
+  production_schema: none
+  deployments: none
+  data:
+    - public.healthcare_utilization 新增 id 5（HSF-013，急診），reason 含診斷、處置、去向與來源
+    - public.audit_trail 新增 id 1288（utilization.add，actor_role pi），與 HSF-006 那次格式一致
+    - 收案文件/個案報告表_CRF紀錄.xlsx（gitignored）表單四第 7 列：HSF-013 急診，樣式複製自第 6 列，記錄人員欄留白
+    - 收案文件/收案對照表.xlsx（gitignored）第 29 列：序號 24、Study ID、手術日期、主刀、收案日期、
+      收案狀態「追蹤中」、備註；四個個資欄留空待 PI 補填。樣式複製自第 28 列
+  備份: 收案文件/收案對照表.bak-20261104.xlsx、收案文件/個案報告表_CRF紀錄.bak-20261104.xlsx
+
+verification:
+  - patients.surgery_date 反推的 POD 與 PI 口述一致
+  - INSERT RETURNING 確認 id 5 與 audit id 1288 在同一交易內寫入；healthcare_utilization 由 4 列變 5 列
+  - 對照表第 29 列寫入前斷言第 28 列為 WCC-005、第 29 列除預填序號外皆空；寫入後回讀非個資欄位，
+    個資欄只檢查是否為空、不讀內容；第 28、29 列 14 欄 _style 逐一相等；第 29 列在下拉清單範圍 6–55 內
+  - 表單四第 7 列回讀八欄值正確
+  - 第一次執行時對照表的空列斷言太嚴（未預期範本預填序號）而中止；表單四已先存檔，對照表未被寫入。
+    修正斷言後只重跑對照表段落
+  - 傷口規則分母查詢：symptom_reports 全表依 study_id 聚合，排除 TEST-001。
+    以「曾出現」計，未要求「新出現」的時序，若改用時序條件人數可能略少
+
+deliberately_not_done:
+  - 未建立 pii_patients HSF-013 列：本 session 沒有也不應取得個資明文。待 PI 填對照表後走 Vault 流程
+  - 未確認 HSF-013 其後新觸發的一則 urinary_difficulty 警示。屬研究端日常審核，不在本次登錄範圍
+  - 未把 WCC-002 與 HSF-007 補進表單四（findings-4）。範圍外，列入 follow_ups
+  - 未改規則引擎、未改 prompt：收案期間凍結
+  - HSF-013 無 AI 對話紀錄，無可審核內容
+
+follow_ups:
+  - PI：補填對照表第 29 列四個個資欄；之後依 CLAUDE.md 流程建立 pii_patients（enrolled_at 取 patients.created_at、文字版 pgp_sym_encrypt、逐列 decrypt 驗證）
+  - PI：表單四第 7 列記錄人員簽名
+  - 查每日摘要 orphan 檢查這幾晚的輸出（findings-3）
+  - 表單四補 WCC-002、HSF-007 兩列，或修好 crf_fill.py 後整批重跑
+  - v2 規則設計：以 findings-2 的全體分母為基準，傷口規則要看「變化」而非「存在」；fever 警示考慮即時通知而非日批次
+  - 分析階段：HSF-013 計入非預期急診分子；study_status 為 active，不會被 view 濾掉
